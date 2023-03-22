@@ -1,2 +1,9 @@
-.terraform/
-terraform-provider-helm-git
+.DS_Store
+
+**/.terraform/*
+**/terraform.tfstate*
+**/terraform.tfvars*
+**/terraform.d/
+
+**/vendor/*
+**/terraform-provider-*

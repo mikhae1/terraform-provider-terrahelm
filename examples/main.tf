@@ -1,16 +1,13 @@
 terraform {
   required_providers {
-    helm-git = {
-      source  = "local/mikhae1/helm-git"
+    terrahelm = {
+      source  = "local/mikhae1/terrahelm"
       version = "0.1.0"
     }
   }
 }
 
-provider "helm-git" {
-}
-
-resource "helm_git_chart" "nginx" {
+resource "terrahelm_chart" "nginx" {
   name           = "nginx"
   git_repository = "https://github.com/bitnami/charts.git"
   git_reference  = "main"
@@ -25,5 +22,5 @@ EOF
 }
 
 output "release_status" {
-  value = helm_git_chart.nginx.release_status
+  value = terrahelm_chart.nginx.release_status
 }
