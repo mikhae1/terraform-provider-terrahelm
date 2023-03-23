@@ -1,6 +1,11 @@
-tf_path = examples/terraform.d/plugins/local/mikhae1/terrahelm/0.1.0/darwin_arm64
+PROVIDER_NAME = terraform-provider-terrahelm
 
-all: build tf-reset tf-init tf-plan
+TF_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
+TF_LOC_DIR = examples/terraform.d/plugins/local/mikhae1/terrahelm/0.1.0
+TF_PATH = $(TF_LOC_DIR)/$(TF_ARCH)
+
+
+all: build tf-init tf-plan
 
 tf-init:
 	cd examples && terraform init --upgrade
@@ -8,9 +13,13 @@ tf-init:
 tf-plan:
 	cd examples && terraform plan
 
-tf-reset:
+tf-clean:
 	cd examples && rm -rf .terraform.lock* .terraform
 
 build:
-	mkdir -p $(tf_path)
-	go build -o $(tf_path)
+	go build -o $(PROVIDER_NAME)
+
+install: build
+	mkdir -p $(TF_PATH)
+	ln -sf $(abspath $(PROVIDER_NAME)) $(TF_PATH)/$(PROVIDER_NAME)
+	$(MAKE) tf-plan

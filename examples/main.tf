@@ -7,7 +7,7 @@ terraform {
   }
 }
 
-resource "terrahelm_chart" "nginx" {
+resource "terrahelm_release" "nginx" {
   name           = "nginx"
   git_repository = "https://github.com/bitnami/charts.git"
   git_reference  = "main"
@@ -16,11 +16,9 @@ resource "terrahelm_chart" "nginx" {
 
   values = <<EOF
 replicaCount: 1
-service:
-  type: LoadBalancer
 EOF
 }
 
 output "release_status" {
-  value = terrahelm_chart.nginx.release_status
+  value = terrahelm_release.nginx.release_status
 }

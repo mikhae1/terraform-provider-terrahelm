@@ -5,6 +5,6 @@ provider "local/mikhae1/terrahelm" {
   version     = "0.1.0"
   constraints = "0.1.0"
   hashes = [
-    "h1:RFxIitMXtw2/1dSXy6kqe32bsIqCArx5YUL1r5My4vw=",
+    "h1:z05zdned/ld+NYhCx5qdkJVtdLnuTQ/Xedq0f1cEc+c=",
   ]
 }

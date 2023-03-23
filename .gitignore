@@ -3,6 +3,7 @@
 **/.terraform/*
 **/terraform.tfstate*
 **/terraform.tfvars*
+**/terraform.lock*
 **/terraform.d/
 
 **/vendor/*
