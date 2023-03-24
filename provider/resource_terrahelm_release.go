@@ -12,10 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"gopkg.in/yaml.v3"
-
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func resourceHelmGitChart() *schema.Resource {
@@ -145,19 +143,22 @@ func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m int
 		d.Set("release_app_version", helmChart.AppVersion)
 
 		// Retrieve the Helm release values
-		valuesCmd := exec.Command("helm", "get", "values", "-n", namespace, name, "-a", "-o", "yaml")
+		valuesCmd := exec.Command("helm", "get", "values", "-n", namespace, name, "-a", "-o", "json")
 		valuesOutput, err := valuesCmd.Output()
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
 		}
 
-		var valuesMap map[string]interface{}
-		err = yaml.Unmarshal(valuesOutput, &valuesMap)
-		if err != nil {
+		var rawValues map[string]interface{}
+		if err := json.Unmarshal(valuesOutput, &rawValues); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to unmarshal Helm release values: %s", err))
 		}
 
-		flatValuesMap := flattenMap(valuesMap)
+		flatValuesMap, err := jsonMapToStringMap(rawValues)
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to convert Helm release values: %s", err))
+		}
+
 		d.Set("release_values", flatValuesMap)
 	}
 
@@ -237,30 +238,32 @@ func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m i
 	return resourceHelmGitChartRead(ctx, d, m)
 }
 
-// flattenMap creates flat map of root keys joined by .
-func flattenMap(input map[string]interface{}) map[string]string {
-	output := make(map[string]string)
-	var flatten func(prefix string, input map[string]interface{})
+func jsonMapToStringMap(rawValues map[string]interface{}) (map[string]string, error) {
+	converted := make(map[string]string)
 
-	flatten = func(prefix string, input map[string]interface{}) {
-		for k, v := range input {
-			key := k
-			if prefix != "" {
-				key = prefix + "." + k
-			}
-			if m, ok := v.(map[string]interface{}); ok {
-				flatten(key, m)
-			} else {
-				if nestedMap, ok := v.(map[string]interface{}); ok {
-					yamlBytes, _ := yaml.Marshal(nestedMap)
-					output[key] = string(yamlBytes)
-				} else {
-					output[key] = fmt.Sprintf("%v", v)
+	var traverse func(parentKey string, value interface{}) error
+
+	traverse = func(parentKey string, value interface{}) error {
+		switch v := value.(type) {
+		case map[string]interface{}:
+			for key, value := range v {
+				err := traverse(parentKey+"."+key, value)
+				if err != nil {
+					return err
 				}
 			}
+		default:
+			converted[parentKey] = fmt.Sprintf("%v", value)
+		}
+		return nil
+	}
+
+	for key, value := range rawValues {
+		err := traverse(key, value)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	flatten("", input)
-	return output
+	return converted, nil
 }
