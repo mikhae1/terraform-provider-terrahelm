@@ -12,11 +12,12 @@ resource "terrahelm_release" "nginx" {
   git_repository = "https://github.com/bitnami/charts.git"
   git_reference  = "main"
   chart_path     = "bitnami/nginx"
-  namespace      = "nginx-namespace"
+  namespace      = "nginx"
+  timeout        = 60
 
-  values = <<EOF
-replicaCount: 1
-EOF
+  #   values = <<EOF
+  # replicaCount: 1
+  # EOF
 }
 
 output "release_status" {

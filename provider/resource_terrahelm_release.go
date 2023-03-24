@@ -1,12 +1,15 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -43,11 +46,49 @@ func resourceHelmGitChart() *schema.Resource {
 				Optional: true,
 				Default:  "default",
 			},
+			"create_namespace": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
 			"values": {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"wait": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
+			"atomic": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"timeout": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+
+			// Computed values for storing in the state
+			"release_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+				Optional: true,
+			},
 			"release_status": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"release_variables": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"release_chart": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"release_app_version": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
@@ -67,54 +108,57 @@ func resourceHelmGitChartDelete(ctx context.Context, d *schema.ResourceData, m i
 
 // resourceHelmGitChartRead reads the status of the installed Helm chart
 func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
 
-	// Run 'helm status' to get the release status
-	cmd := exec.Command("helm", "status", name, "--namespace", namespace, "--output", "json")
-	output, err := cmd.CombinedOutput()
+	// Retrieve the Helm chart information
+	listCmd := exec.Command("helm", "list", "-n", namespace, "-f", fmt.Sprintf("^%s$", name), "-o", "json")
+	output, err := listCmd.Output()
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("failed to get the status of the Helm release: %s", err))
+		return diag.FromErr(fmt.Errorf("failed to retrieve Helm chart information: %s", err))
 	}
 
-	// Parse the JSON output to get the release status
-	var releaseStatus struct {
-		Info struct {
-			Status string `json:"status"`
-		} `json:"info"`
-	}
-	if err := json.Unmarshal(output, &releaseStatus); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to parse the Helm release status JSON: %s", err))
-	}
-
-	// Set the 'release_status' attribute in the Terraform state
-	if err := d.Set("release_status", strings.ToLower(releaseStatus.Info.Status)); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to set release_status: %s", err))
+	var helmList []struct {
+		Name       string `json:"name"`
+		Namespace  string `json:"namespace"`
+		Revision   string `json:"revision"`
+		Updated    string `json:"updated"`
+		Status     string `json:"status"`
+		Chart      string `json:"chart"`
+		AppVersion string `json:"app_version"`
 	}
 
-	// Set the resource ID to the release name, which is used to identify the resource in Terraform state
-	d.SetId(name)
+	if err := json.Unmarshal(output, &helmList); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to unmarshal Helm chart information: %s", err))
+	}
 
-	return diags
+	if len(helmList) > 0 {
+		helmChart := helmList[0]
+		d.Set("release_version", helmChart.Revision) // Convert int to string
+		d.Set("release_status", helmChart.Status)
+		d.Set("release_chart", helmChart.Chart)
+		d.Set("release_app_version", helmChart.AppVersion)
+	}
+
+	return nil
 }
 
 // resourceHelmGitChartCreate installs a Helm chart from a Git repository
-func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	name := d.Get("name").(string)
 	gitRepository := d.Get("git_repository").(string)
 	gitReference := d.Get("git_reference").(string)
 	chartPath := d.Get("chart_path").(string)
 	namespace := d.Get("namespace").(string)
+	create_namespace := d.Get("create_namespace").(bool)
 	values := d.Get("values").(string)
+	wait := d.Get("wait").(bool)
+	atomic := d.Get("atomic").(bool)
+	timeout := d.Get("timeout").(string)
 
 	// Clone the Git repository
 	tempDir := os.TempDir()
 	repoPath := filepath.Join(tempDir, "helm-git-repo")
-	if err := os.RemoveAll(repoPath); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to clean up the temporary Git repository directory: %s", err))
-	}
 	defer os.RemoveAll(repoPath)
 
 	cmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
@@ -122,19 +166,51 @@ func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m i
 		return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
 	}
 
-	// Install the Helm chart
 	fullChartPath := filepath.Join(repoPath, chartPath)
-	installCmd := exec.Command("helm", "upgrade", "--install", name, fullChartPath, "--namespace", namespace)
+	depCmd := exec.Command("helm", "dependency", "build", "--logtostderr", fullChartPath)
+	var helmDepStderr bytes.Buffer
+	depCmd.Stderr = &helmDepStderr
+	if err := depCmd.Run(); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to run 'helm dependency build': %s\nHelm output: %s", err, helmDepStderr.String()))
+	}
+
+	// Install the Helm chart
+	helmCmd := exec.Command("helm", "install", name, fullChartPath)
+	if namespace != "" {
+		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
+	}
+	if create_namespace {
+		helmCmd.Args = append(helmCmd.Args, "--create-namespace")
+	}
 	if values != "" {
-		installCmd.Args = append(installCmd.Args, "--set", values)
+		helmCmd.Args = append(helmCmd.Args, "--set", values)
+	}
+	if wait {
+		helmCmd.Args = append(helmCmd.Args, "--wait")
+	}
+	if atomic {
+		helmCmd.Args = append(helmCmd.Args, "--atomic")
+	}
+	if timeout != "" {
+		if _, err := strconv.Atoi(timeout); err == nil {
+			timeout = timeout + "s"
+		}
+		helmCmd.Args = append(helmCmd.Args, "--timeout", timeout)
+	}
+	helmCmd.Args = append(helmCmd.Args, "--logtostderr")
+
+	var helmCmdStdout, helmCmdStderr bytes.Buffer
+	helmCmd.Stderr = &helmCmdStderr
+	helmCmd.Stdout = &helmCmdStdout
+	helmCmdString := strings.Join(helmCmd.Args, " ")
+	if err := helmCmd.Run(); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s\nHelm command: %s", err, helmCmdStderr.String(), helmCmdString))
 	}
 
-	if err := installCmd.Run(); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s", err))
-	}
+	// Set the ID for the resource
+	d.SetId(fmt.Sprintf("%s/%s", namespace, name))
 
-	// Set the resource ID to the release name, which is used to identify the resource in Terraform state
-	d.SetId(name)
+	log.Printf("Helm chart %s has been installed successfully.\nHelm command: %s\nHelm output: %s", name, helmCmdString, helmCmdStdout.String())
 
 	// Read the release status to update the Terraform state
 	return resourceHelmGitChartRead(ctx, d, m)
