@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"gopkg.in/yaml.v3"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 )
@@ -79,18 +80,22 @@ func resourceHelmGitChart() *schema.Resource {
 			"release_status": {
 				Type:     schema.TypeString,
 				Computed: true,
+				ForceNew: true,
 			},
-			"release_variables": {
-				Type:     schema.TypeString,
-				Computed: true,
+			"release_values": {
+				Type:     schema.TypeMap,
+				Optional: true,
+				ForceNew: true,
 			},
 			"release_chart": {
 				Type:     schema.TypeString,
 				Computed: true,
+				ForceNew: true,
 			},
 			"release_app_version": {
 				Type:     schema.TypeString,
 				Computed: true,
+				ForceNew: true,
 			},
 		},
 	}
@@ -138,6 +143,22 @@ func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m int
 		d.Set("release_status", helmChart.Status)
 		d.Set("release_chart", helmChart.Chart)
 		d.Set("release_app_version", helmChart.AppVersion)
+
+		// Retrieve the Helm release values
+		valuesCmd := exec.Command("helm", "get", "values", "-n", namespace, name, "-a", "-o", "yaml")
+		valuesOutput, err := valuesCmd.Output()
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
+		}
+
+		var valuesMap map[string]interface{}
+		err = yaml.Unmarshal(valuesOutput, &valuesMap)
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("failed to unmarshal Helm release values: %s", err))
+		}
+
+		flatValuesMap := flattenMap(valuesMap)
+		d.Set("release_values", flatValuesMap)
 	}
 
 	return nil
@@ -214,4 +235,32 @@ func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m i
 
 	// Read the release status to update the Terraform state
 	return resourceHelmGitChartRead(ctx, d, m)
+}
+
+// flattenMap creates flat map of root keys joined by .
+func flattenMap(input map[string]interface{}) map[string]string {
+	output := make(map[string]string)
+	var flatten func(prefix string, input map[string]interface{})
+
+	flatten = func(prefix string, input map[string]interface{}) {
+		for k, v := range input {
+			key := k
+			if prefix != "" {
+				key = prefix + "." + k
+			}
+			if m, ok := v.(map[string]interface{}); ok {
+				flatten(key, m)
+			} else {
+				if nestedMap, ok := v.(map[string]interface{}); ok {
+					yamlBytes, _ := yaml.Marshal(nestedMap)
+					output[key] = string(yamlBytes)
+				} else {
+					output[key] = fmt.Sprintf("%v", v)
+				}
+			}
+		}
+	}
+
+	flatten("", input)
+	return output
 }

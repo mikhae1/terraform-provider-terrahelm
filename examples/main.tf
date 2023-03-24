@@ -16,7 +16,7 @@ resource "terrahelm_release" "nginx" {
   timeout        = 60
 
   #   values = <<EOF
-  # replicaCount: 1
+  # replicaCount: 2
   # EOF
 }
 
