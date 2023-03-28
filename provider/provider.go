@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -49,24 +48,36 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 }
 
 func installHelmCLI(helmVersion string) (helmPath string, err error) {
-	tempDir, err := ioutil.TempDir("", "helm")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary directory: %v", err)
+	cacheDir := filepath.Join(os.TempDir(), "terrahelm_cache")
+	if err := os.MkdirAll(cacheDir, os.ModePerm); err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %v", err)
+	}
+	fmt.Printf("[DEBUG] using cacheDir: %v\n", cacheDir)
+
+	helmDir := filepath.Join(cacheDir, helmVersion)
+	helmPath = filepath.Join(helmDir, "helm")
+	if _, err := os.Stat(helmPath); err == nil {
+		log.Printf("Using cached Helm binary: %s", helmPath)
+		return helmPath, nil
 	}
 
-	installCmd := exec.Command("curl", "-fsSL", "-o", filepath.Join(tempDir, "get_helm.sh"), "https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3")
+	if err := os.MkdirAll(helmDir, os.ModePerm); err != nil {
+		return "", fmt.Errorf("failed to create Helm directory: %v", err)
+	}
+
+	installCmd := exec.Command("curl", "-fsSL", "-o", filepath.Join(helmDir, "get_helm.sh"), "https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3")
 	if err := installCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to download Helm installation script: %v", err)
 	}
 
-	chmodCmd := exec.Command("chmod", "700", filepath.Join(tempDir, "get_helm.sh"))
+	chmodCmd := exec.Command("chmod", "700", filepath.Join(helmDir, "get_helm.sh"))
 	if err := chmodCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to set execute permission on Helm installation script: %v", err)
 	}
 
-	installHelmCmd := exec.Command(filepath.Join(tempDir, "get_helm.sh"), "--version", "v"+helmVersion)
+	installHelmCmd := exec.Command(filepath.Join(helmDir, "get_helm.sh"), "--version", "v"+helmVersion)
 	installHelmCmd.Env = append(os.Environ(),
-		"HELM_INSTALL_DIR="+tempDir,
+		"HELM_INSTALL_DIR="+helmDir,
 		"USE_SUDO=false",
 	)
 	output, err := installHelmCmd.CombinedOutput()
@@ -74,7 +85,7 @@ func installHelmCLI(helmVersion string) (helmPath string, err error) {
 		return "", fmt.Errorf("failed to install Helm: %v\nOutput: %s", err, output)
 	}
 
-	helmPath = filepath.Join(tempDir, "helm")
+	// helmPath = filepath.Join(helmDir, "helm")
 
 	log.Printf("Helm version: %s is installed at: %s", helmVersion, helmPath)
 
