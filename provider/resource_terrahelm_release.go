@@ -18,9 +18,13 @@ import (
 
 func resourceHelmGitChart() *schema.Resource {
 	return &schema.Resource{
-		CreateContext: resourceHelmGitChartCreate,
+		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+			return resourceHelmGitChartCreateOrUpdate(ctx, d, m, false)
+		},
+		UpdateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+			return resourceHelmGitChartCreateOrUpdate(ctx, d, m, true)
+		},
 		ReadContext:   resourceHelmGitChartRead,
-		UpdateContext: resourceHelmGitChartUpdate,
 		DeleteContext: resourceHelmGitChartDelete,
 
 		Schema: map[string]*schema.Schema{
@@ -31,6 +35,7 @@ func resourceHelmGitChart() *schema.Resource {
 			"git_repository": {
 				Type:     schema.TypeString,
 				Required: true,
+				ForceNew: true,
 			},
 			"git_reference": {
 				Type:     schema.TypeString,
@@ -54,6 +59,10 @@ func resourceHelmGitChart() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"chart_version": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
 			"wait": {
 				Type:     schema.TypeBool,
 				Optional: true,
@@ -69,47 +78,50 @@ func resourceHelmGitChart() *schema.Resource {
 				Optional: true,
 			},
 
-			// Computed values for storing in the state
-			"release_version": {
+			// Computed values for storing additional info in the state
+			"release_revision": {
 				Type:     schema.TypeString,
 				Computed: true,
-				Optional: true,
+			},
+			"release_chart_name": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"release_chart_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"release_values": {
+				Type:     schema.TypeMap,
+				Computed: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
 			},
 			"release_status": {
 				Type:     schema.TypeString,
 				Computed: true,
-				ForceNew: true,
-			},
-			"release_values": {
-				Type:     schema.TypeMap,
-				Optional: true,
-				ForceNew: true,
-			},
-			"release_chart": {
-				Type:     schema.TypeString,
-				Computed: true,
-				ForceNew: true,
-			},
-			"release_app_version": {
-				Type:     schema.TypeString,
-				Computed: true,
-				ForceNew: true,
 			},
 		},
 	}
 }
 
-// TODO:
-func resourceHelmGitChartUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	return diag.Diagnostics{}
-}
-
-// TODO:
 func resourceHelmGitChartDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	return diag.Diagnostics{}
+	name := d.Get("name").(string)
+	namespace := d.Get("namespace").(string)
+
+	cmd := exec.Command("helm", "uninstall", name, "--namespace", namespace)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to uninstall Helm release: %v, Output: %s", err, output))
+	}
+
+	d.SetId("")
+
+	return nil
 }
 
-// resourceHelmGitChartRead reads the status of the installed Helm chart
 func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
@@ -135,44 +147,55 @@ func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m int
 		return diag.FromErr(fmt.Errorf("failed to unmarshal Helm chart information: %s", err))
 	}
 
-	if len(helmList) > 0 {
-		helmChart := helmList[0]
-		d.Set("release_version", helmChart.Revision) // Convert int to string
-		d.Set("release_status", helmChart.Status)
-		d.Set("release_chart", helmChart.Chart)
-		d.Set("release_app_version", helmChart.AppVersion)
+	if len(helmList) == 0 {
+		return diag.Errorf("failed to list Helm chart: %s", name)
+	}
 
-		// Retrieve the Helm release values
-		valuesCmd := exec.Command("helm", "get", "values", "-n", namespace, name, "-a", "-o", "json")
-		valuesOutput, err := valuesCmd.Output()
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
-		}
+	helmChart := helmList[0]
 
-		var rawValues map[string]interface{}
-		if err := json.Unmarshal(valuesOutput, &rawValues); err != nil {
-			return diag.FromErr(fmt.Errorf("failed to unmarshal Helm release values: %s", err))
-		}
+	// Capture the respective values from the cluster at current time
+	chartParts := strings.Split(helmChart.Chart, "-")
+	chartVersion := chartParts[len(chartParts)-1]
+	chartName := strings.Join(chartParts[:len(chartParts)-1], "-")
+	d.Set("release_chart_name", chartName)
+	d.Set("release_chart_version", chartVersion)
 
-		flatValuesMap, err := jsonMapToStringMap(rawValues)
-		if err != nil {
-			return diag.FromErr(fmt.Errorf("failed to convert Helm release values: %s", err))
-		}
+	d.Set("release_revision", helmChart.Revision)
+	d.Set("release_status", helmChart.Status)
 
-		d.Set("release_values", flatValuesMap)
+	// Retrieve the Helm release values
+	valuesCmd := exec.Command("helm", "get", "values", "-n", namespace, name, "-a", "-o", "json")
+	valuesOutput, err := valuesCmd.Output()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
+	}
+
+	var rawValues map[string]interface{}
+	if err := json.Unmarshal(valuesOutput, &rawValues); err != nil {
+		return diag.FromErr(fmt.Errorf("failed to unmarshal Helm release values: %s", err))
+	}
+
+	flatValuesMap, err := jsonMapToStringMap(rawValues)
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to convert Helm release values: %s", err))
+	}
+
+	if err := d.Set("release_values", flatValuesMap); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return nil
 }
 
 // resourceHelmGitChartCreate installs a Helm chart from a Git repository
-func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m interface{}, isUpdate bool) diag.Diagnostics {
 	name := d.Get("name").(string)
 	gitRepository := d.Get("git_repository").(string)
 	gitReference := d.Get("git_reference").(string)
 	chartPath := d.Get("chart_path").(string)
 	namespace := d.Get("namespace").(string)
 	create_namespace := d.Get("create_namespace").(bool)
+	chart_version := d.Get("chart_version").(string)
 	values := d.Get("values").(string)
 	wait := d.Get("wait").(bool)
 	atomic := d.Get("atomic").(bool)
@@ -183,8 +206,8 @@ func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m i
 	repoPath := filepath.Join(tempDir, "helm-git-repo")
 	defer os.RemoveAll(repoPath)
 
-	cmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
-	if err := cmd.Run(); err != nil {
+	cloneCmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
+	if err := cloneCmd.Run(); err != nil {
 		return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
 	}
 
@@ -197,12 +220,21 @@ func resourceHelmGitChartCreate(ctx context.Context, d *schema.ResourceData, m i
 	}
 
 	// Install the Helm chart
-	helmCmd := exec.Command("helm", "install", name, fullChartPath)
+	cmd := "install"
+	if isUpdate {
+		cmd = "upgrade"
+	}
+
+	helmCmd := exec.Command("helm", cmd, name, fullChartPath)
+
 	if namespace != "" {
 		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
 	}
 	if create_namespace {
 		helmCmd.Args = append(helmCmd.Args, "--create-namespace")
+	}
+	if chart_version != "" {
+		helmCmd.Args = append(helmCmd.Args, "--version", chart_version)
 	}
 	if values != "" {
 		helmCmd.Args = append(helmCmd.Args, "--set", values)

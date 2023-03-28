@@ -3,9 +3,9 @@ PROVIDER = terraform-provider-terrahelm
 TF_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 TF_LOC_DIR = examples/terraform.d/plugins/local/mikhae1/terrahelm/0.1.0
 TF_PATH = $(TF_LOC_DIR)/$(TF_ARCH)
+export TF_LOG = INFO
 
-
-all: tf-init tf-install tf-apply
+all: tf-init tf-install
 
 tf-init: build
 	@cd examples &&\
@@ -13,10 +13,10 @@ tf-init: build
 		terraform init --upgrade
 
 tf-plan:
-	cd examples && terraform plan
+	cd examples && terraform plan $(filter-out $@,$(MAKECMDGOALS))
 
 tf-apply:
-	cd examples && TF_LOG=INFO terraform apply --auto-approve
+	cd examples && terraform apply --auto-approve
 
 tf-clean:
 	helm -n nginx uninstall nginx || true

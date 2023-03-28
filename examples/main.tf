@@ -14,6 +14,8 @@ resource "terrahelm_release" "nginx" {
   chart_path     = "bitnami/nginx"
   namespace      = "nginx"
   timeout        = 60
+  chart_version  = "13.2.1"
+  # release_chart  = "1.2"
 
   #   values = <<EOF
   # replicaCount: 2
@@ -23,3 +25,7 @@ resource "terrahelm_release" "nginx" {
 output "release_status" {
   value = terrahelm_release.nginx.release_status
 }
+
+# output "release_values" {
+#   value = terrahelm_release.nginx.release_values
+# }
