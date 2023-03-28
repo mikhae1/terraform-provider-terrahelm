@@ -7,6 +7,10 @@ terraform {
   }
 }
 
+provider "terrahelm" {
+  helm_version = "3.7.0"
+}
+
 resource "terrahelm_release" "nginx" {
   name           = "nginx"
   git_repository = "https://github.com/bitnami/charts.git"
