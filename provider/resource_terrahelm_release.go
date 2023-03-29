@@ -3,8 +3,11 @@ package provider
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -12,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -29,80 +33,96 @@ func resourceHelmGitChart() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"name": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
+				Description: "Name of the Helm release",
+				Type:        schema.TypeString,
+				Required:    true,
+				ForceNew:    true,
 			},
 			"git_repository": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
+				Description: "URL of the Git repository containing the Helm chart",
+				Type:        schema.TypeString,
+				Required:    true,
+				ForceNew:    true,
 			},
 			"git_reference": {
-				Type:     schema.TypeString,
-				Required: true,
+				Description: "Reference (e.g. branch, tag, commit hash) to checkout in the Git repository",
+				Type:        schema.TypeString,
+				Required:    true,
 			},
 			"chart_path": {
-				Type:     schema.TypeString,
-				Required: true,
+				Description: "The path within the Git repository where the Helm chart is located",
+				Type:        schema.TypeString,
+				Required:    true,
 			},
 			"namespace": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "default",
-				ForceNew: true,
+				Description: "The Kubernetes namespace where the Helm chart will be installed",
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "default",
+				ForceNew:    true,
 			},
 			"create_namespace": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  true,
+				Description: "Whether to create the Kubernetes namespace if it does not exist",
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
 			},
 			"values": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Description: "A YAML string representing the values to be passed to the Helm chart",
+				Type:        schema.TypeString,
+				Optional:    true,
 			},
 			"chart_version": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Description: "The version of the Helm chart to install",
+				Type:        schema.TypeString,
+				Optional:    true,
 			},
 			"wait": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  false,
+				Description: "Whether to wait for the Helm chart installation to complete",
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
 			},
 			"atomic": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  true,
+				Description: "Whether to roll back the Helm chart installation if it fails",
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
 			},
 			"timeout": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Description: "The maximum time to wait for the Helm chart installation to complete",
+				Type:        schema.TypeString,
+				Optional:    true,
 			},
 
 			// Computed values for storing additional info in the state
 			"release_revision": {
-				Type:     schema.TypeString,
-				Computed: true,
+				Description: "The revision of the installed Helm release",
+				Type:        schema.TypeString,
+				Computed:    true,
 			},
 			"release_chart_name": {
-				Type:     schema.TypeString,
-				Computed: true,
+				Description: "The name of the installed Helm chart",
+				Type:        schema.TypeString,
+				Computed:    true,
 			},
 			"release_chart_version": {
-				Type:     schema.TypeString,
-				Computed: true,
+				Description: "The version of the installed Helm chart",
+				Type:        schema.TypeString,
+				Computed:    true,
 			},
 			"release_values": {
-				Type:     schema.TypeMap,
-				Computed: true,
+				Description: "The values passed to the Helm chart at installation time",
+				Type:        schema.TypeMap,
+				Computed:    true,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
 			},
 			"release_status": {
-				Type:     schema.TypeString,
-				Computed: true,
+				Description: "The current status of the installed Helm release",
+				Type:        schema.TypeString,
+				Computed:    true,
 			},
 		},
 	}
@@ -211,15 +231,20 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 
 	config := m.(*ProviderConfig)
 	helmBinPath := config.HelmBinPath
+	cacheDir := config.CacheDir
 
-	// Clone the Git repository
-	tempDir := os.TempDir()
-	repoPath := filepath.Join(tempDir, "helm-git-repo")
-	defer os.RemoveAll(repoPath)
+	// Clone the Git repository or use the cache
+	repoName := gitRepository[strings.LastIndex(gitRepository, "/")+1:]
+	repoPath := filepath.Join(cacheDir, "repos", repoName, gitReference)
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
+		}
 
-	cloneCmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
-	if err := cloneCmd.Run(); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
+		cloneCmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
+		if err := cloneCmd.Run(); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
+		}
 	}
 
 	fullChartPath := filepath.Join(repoPath, chartPath)
@@ -248,7 +273,21 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 		helmCmd.Args = append(helmCmd.Args, "--version", chart_version)
 	}
 	if values != "" {
-		helmCmd.Args = append(helmCmd.Args, "--set", values)
+		// Create a YAML file from the "values" string
+		hash := sha256.Sum256([]byte(values))
+		hashStr := hex.EncodeToString(hash[:8])
+		valuesPath := filepath.Join(cacheDir, "values", repoName, gitReference)
+		if err := os.MkdirAll(valuesPath, os.ModePerm); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
+		}
+
+		valuesFilePath := filepath.Join(valuesPath, fmt.Sprintf("%s-%s-values.yaml", name, hashStr))
+
+		if err := ioutil.WriteFile(valuesFilePath, []byte(values), os.ModePerm); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to create Helm values file: %s", err))
+		}
+
+		helmCmd.Args = append(helmCmd.Args, "-f", valuesFilePath)
 	}
 	if wait {
 		helmCmd.Args = append(helmCmd.Args, "--wait")
@@ -269,7 +308,7 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	helmCmd.Stdout = &helmCmdStdout
 	helmCmdString := strings.Join(helmCmd.Args, " ")
 
-	log.Printf("Running Helm command: %s", helmCmdString)
+	tflog.Info(ctx, "Running Helm command: "+helmCmdString)
 	if err := helmCmd.Run(); err != nil {
 		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String()))
 	}
