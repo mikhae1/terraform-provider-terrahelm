@@ -20,16 +20,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-func resourceHelmGitChart() *schema.Resource {
+func resourceHelmRelease() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-			return resourceHelmGitChartCreateOrUpdate(ctx, d, m, false)
+			return resourceHelmReleaseCreateOrUpdate(ctx, d, m, false)
 		},
 		UpdateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-			return resourceHelmGitChartCreateOrUpdate(ctx, d, m, true)
+			return resourceHelmReleaseCreateOrUpdate(ctx, d, m, true)
 		},
-		ReadContext:   resourceHelmGitChartRead,
-		DeleteContext: resourceHelmGitChartDelete,
+		ReadContext:   resourceHelmReleaseRead,
+		DeleteContext: resourceHelmReleaseDelete,
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -128,7 +128,7 @@ func resourceHelmGitChart() *schema.Resource {
 	}
 }
 
-func resourceHelmGitChartDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceHelmReleaseDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
 
@@ -147,7 +147,7 @@ func resourceHelmGitChartDelete(ctx context.Context, d *schema.ResourceData, m i
 	return nil
 }
 
-func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
 
@@ -215,8 +215,8 @@ func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m int
 	return nil
 }
 
-// resourceHelmGitChartCreate installs a Helm chart from a Git repository
-func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m interface{}, isUpdate bool) diag.Diagnostics {
+// resourceHelmReleaseCreate installs a Helm chart from a Git repository
+func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m interface{}, isUpdate bool) diag.Diagnostics {
 	name := d.Get("name").(string)
 	gitRepository := d.Get("git_repository").(string)
 	gitReference := d.Get("git_reference").(string)
@@ -230,6 +230,7 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	timeout := d.Get("timeout").(string)
 
 	config := m.(*ProviderConfig)
+	kauth := config.KubeAuth
 	helmBinPath := config.HelmBinPath
 	cacheDir := config.CacheDir
 
@@ -289,6 +290,33 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 
 		helmCmd.Args = append(helmCmd.Args, "-f", valuesFilePath)
 	}
+	if kauth.KubeAPIServer != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-apiserver", kauth.KubeAPIServer)
+	}
+	if kauth.KubeAsUser != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-as-user", kauth.KubeAsUser)
+	}
+	if kauth.KubeAsGroup != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-as-group", kauth.KubeAsGroup)
+	}
+	if kauth.KubeCAFile != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-ca-file", kauth.KubeCAFile)
+	}
+	if kauth.KubeContext != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-context", kauth.KubeContext)
+	}
+	if kauth.KubeInsecureSkipTLSVerify {
+		helmCmd.Args = append(helmCmd.Args, "--kube-insecure-skip-tls-verify")
+	}
+	if kauth.KubeTLSServerName != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-tls-server-name", kauth.KubeTLSServerName)
+	}
+	if kauth.KubeToken != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-token", kauth.KubeToken)
+	}
+	if kauth.Kubeconfig != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kubeconfig", kauth.Kubeconfig)
+	}
 	if wait {
 		helmCmd.Args = append(helmCmd.Args, "--wait")
 	}
@@ -308,7 +336,8 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	helmCmd.Stdout = &helmCmdStdout
 	helmCmdString := strings.Join(helmCmd.Args, " ")
 
-	tflog.Info(ctx, "Running Helm command: "+helmCmdString)
+	tflog.Info(ctx, "\nInvoking Helm command:\n\t"+helmCmdString+"\n")
+
 	if err := helmCmd.Run(); err != nil {
 		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String()))
 	}
@@ -319,7 +348,7 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	log.Printf("Helm chart %s has been installed successfully.\nHelm output: %s", name, helmCmdStdout.String())
 
 	// Read the release status to update the Terraform state
-	return resourceHelmGitChartRead(ctx, d, m)
+	return resourceHelmReleaseRead(ctx, d, m)
 }
 
 func jsonMapToStringMap(rawValues map[string]interface{}) (map[string]string, error) {

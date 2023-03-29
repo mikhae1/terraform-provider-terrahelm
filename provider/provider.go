@@ -19,6 +19,19 @@ type ProviderConfig struct {
 	HelmBinPath string
 	HelmVersion string
 	CacheDir    string
+	KubeAuth    KubeAuth
+}
+
+type KubeAuth struct {
+	KubeAPIServer             string
+	KubeAsGroup               string
+	KubeAsUser                string
+	KubeCAFile                string
+	KubeContext               string
+	KubeInsecureSkipTLSVerify bool
+	KubeTLSServerName         string
+	KubeToken                 string
+	Kubeconfig                string
 }
 
 func Provider() *schema.Provider {
@@ -28,6 +41,7 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("HELM_VERSION", "latest"),
+				Description: "Helm binary version to install",
 			},
 			"helm_bin_path": {
 				Type:        schema.TypeString,
@@ -38,11 +52,67 @@ func Provider() *schema.Provider {
 			"cache_dir": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("TF_DATA_DIR", filepath.Join(".terraform", "terrahelm_cache")),
+				DefaultFunc: schema.MultiEnvDefaultFunc([]string{"TF_DATA_DIR", "TH_CACHE"}, filepath.Join(".terraform", "terrahelm_cache")),
+				Description: "Cache directory path",
+			},
+			"kube_apiserver": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBEAPISERVER", ""),
+				Description: "Address and the port for the Kubernetes API server",
+			},
+			"kube_as_group": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBEASGROUPS", ""),
+				Description: "Group to impersonate for the operation, this flag can be repeated to specify multiple groups",
+			},
+			"kube_as_user": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBEASUSER", ""),
+				Description: "Username to impersonate for the operation",
+			},
+			"kube_ca_file": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBECAFILE", ""),
+				Description: "Certificate authority file for the Kubernetes API server connection",
+			},
+			"kube_context": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBECONTEXT", ""),
+				Description: "Name of the kubeconfig context to use",
+			},
+			"kube_insecure_skip_tls_verify": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBEINSECURE_SKIP_TLS_VERIFY", false),
+				Description: "If true, the Kubernetes API server's certificate will not be checked for validity. This will make your HTTPS connections insecure",
+			},
+			"kube_tls_server_name": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBETLS_SERVER_NAMEs", ""),
+				Description: "Server name to use for Kubernetes API server certificate validation. If it is not provided, the hostname used to contact the server is used",
+			},
+			"kube_token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Sensitive:   true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_KUBETOKEN", ""),
+				Description: "Bearer token used for authentication",
+			},
+			"kubeconfig": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KUBECONFIG", ""),
+				Description: "Path to the kubeconfig file",
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"terrahelm_release": resourceHelmGitChart(),
+			"terrahelm_release": resourceHelmRelease(),
 		},
 		ConfigureContextFunc: configureProvider,
 	}
@@ -72,6 +142,18 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 		HelmBinPath: helmBinPath,
 		HelmVersion: helmVersion,
 		CacheDir:    cacheDir,
+
+		KubeAuth: KubeAuth{
+			KubeAPIServer:             d.Get("kube_apiserver").(string),
+			KubeAsGroup:               d.Get("kube_as_group").(string),
+			KubeAsUser:                d.Get("kube_as_user").(string),
+			KubeCAFile:                d.Get("kube_ca_file").(string),
+			KubeContext:               d.Get("kube_context").(string),
+			KubeInsecureSkipTLSVerify: d.Get("kube_insecure_skip_tls_verify").(bool),
+			KubeTLSServerName:         d.Get("kube_tls_server_name").(string),
+			KubeToken:                 d.Get("kube_token").(string),
+			Kubeconfig:                d.Get("kubeconfig").(string),
+		},
 	}, nil
 }
 

@@ -9,6 +9,7 @@ terraform {
 
 provider "terrahelm" {
   helm_version = "v3.7.1"
+  kube_context = "rancher-desktop"
 }
 
 resource "terrahelm_release" "nginx" {
@@ -17,9 +18,8 @@ resource "terrahelm_release" "nginx" {
   git_reference  = "main"
   chart_path     = "bitnami/nginx"
   namespace      = "nginx"
-  timeout        = 50
+  timeout        = 30
   chart_version  = "13.2.1"
-  # release_chart  = "1.2"
 
   values = <<EOF
   replicaCount: 1
