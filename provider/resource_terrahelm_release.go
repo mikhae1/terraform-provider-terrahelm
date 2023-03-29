@@ -31,6 +31,7 @@ func resourceHelmGitChart() *schema.Resource {
 			"name": {
 				Type:     schema.TypeString,
 				Required: true,
+				ForceNew: true,
 			},
 			"git_repository": {
 				Type:     schema.TypeString,
@@ -49,6 +50,7 @@ func resourceHelmGitChart() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				Default:  "default",
+				ForceNew: true,
 			},
 			"create_namespace": {
 				Type:     schema.TypeBool,
@@ -110,7 +112,10 @@ func resourceHelmGitChartDelete(ctx context.Context, d *schema.ResourceData, m i
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
 
-	cmd := exec.Command("helm", "uninstall", name, "--namespace", namespace)
+	config := m.(*ProviderConfig)
+	helmBinPath := config.HelmBinPath
+
+	cmd := exec.Command(helmBinPath, "uninstall", name, "--namespace", namespace)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -126,8 +131,11 @@ func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m int
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
 
+	config := m.(*ProviderConfig)
+	helmBinPath := config.HelmBinPath
+
 	// Retrieve the Helm chart information
-	listCmd := exec.Command("helm", "list", "-n", namespace, "-f", fmt.Sprintf("^%s$", name), "-o", "json")
+	listCmd := exec.Command(helmBinPath, "list", "-n", namespace, "-f", fmt.Sprintf("^%s$", name), "-o", "json")
 	output, err := listCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm chart information: %s", err))
@@ -164,7 +172,7 @@ func resourceHelmGitChartRead(ctx context.Context, d *schema.ResourceData, m int
 	d.Set("release_status", helmChart.Status)
 
 	// Retrieve the Helm release values
-	valuesCmd := exec.Command("helm", "get", "values", "-n", namespace, name, "-a", "-o", "json")
+	valuesCmd := exec.Command(helmBinPath, "get", "values", "-n", namespace, name, "-a", "-o", "json")
 	valuesOutput, err := valuesCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
@@ -201,6 +209,9 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	atomic := d.Get("atomic").(bool)
 	timeout := d.Get("timeout").(string)
 
+	config := m.(*ProviderConfig)
+	helmBinPath := config.HelmBinPath
+
 	// Clone the Git repository
 	tempDir := os.TempDir()
 	repoPath := filepath.Join(tempDir, "helm-git-repo")
@@ -212,7 +223,7 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	}
 
 	fullChartPath := filepath.Join(repoPath, chartPath)
-	depCmd := exec.Command("helm", "dependency", "build", "--logtostderr", fullChartPath)
+	depCmd := exec.Command(helmBinPath, "dependency", "build", "--logtostderr", fullChartPath)
 	var helmDepStderr bytes.Buffer
 	depCmd.Stderr = &helmDepStderr
 	if err := depCmd.Run(); err != nil {
@@ -225,7 +236,7 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 		cmd = "upgrade"
 	}
 
-	helmCmd := exec.Command("helm", cmd, name, fullChartPath)
+	helmCmd := exec.Command(helmBinPath, cmd, name, fullChartPath)
 
 	if namespace != "" {
 		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
@@ -257,14 +268,16 @@ func resourceHelmGitChartCreateOrUpdate(ctx context.Context, d *schema.ResourceD
 	helmCmd.Stderr = &helmCmdStderr
 	helmCmd.Stdout = &helmCmdStdout
 	helmCmdString := strings.Join(helmCmd.Args, " ")
+
+	log.Printf("Running Helm command: %s", helmCmdString)
 	if err := helmCmd.Run(); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s\nHelm command: %s", err, helmCmdStderr.String(), helmCmdString))
+		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String()))
 	}
 
 	// Set the ID for the resource
 	d.SetId(fmt.Sprintf("%s/%s", namespace, name))
 
-	log.Printf("Helm chart %s has been installed successfully.\nHelm command: %s\nHelm output: %s", name, helmCmdString, helmCmdStdout.String())
+	log.Printf("Helm chart %s has been installed successfully.\nHelm output: %s", name, helmCmdStdout.String())
 
 	// Read the release status to update the Terraform state
 	return resourceHelmGitChartRead(ctx, d, m)

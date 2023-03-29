@@ -8,11 +8,11 @@ terraform {
 }
 
 provider "terrahelm" {
-  helm_version = "3.7.0"
+  helm_version = "v3.7.1"
 }
 
 resource "terrahelm_release" "nginx" {
-  name           = "nginx"
+  name           = "nginx1"
   git_repository = "https://github.com/bitnami/charts.git"
   git_reference  = "main"
   chart_path     = "bitnami/nginx"

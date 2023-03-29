@@ -12,8 +12,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-type providerConfig struct {
-	HelmPath string
+const GET_HELM_URL = "https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3"
+
+type ProviderConfig struct {
+	HelmBinPath string
+	HelmVersion string
 }
 
 func Provider() *schema.Provider {
@@ -23,6 +26,12 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("HELM_VERSION", "latest"),
+			},
+			"helm_bin_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("HELM_BIN_PATH", ""),
+				Description: "If provided the helm_bin_path will be used instead for calling Helm binary",
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
@@ -34,20 +43,24 @@ func Provider() *schema.Provider {
 
 func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	helmVersion := d.Get("helm_version").(string)
+	helmBinPath := d.Get("helm_bin_path").(string)
 
-	helmPath, err := installHelmCLI(helmVersion)
-	if err != nil {
-		return nil, diag.FromErr(err)
+	if helmBinPath == "" {
+		var err error
+		if helmBinPath, err = installHelmCLI(helmVersion); err != nil {
+			return nil, diag.FromErr(err)
+		}
 	}
 
-	config := &providerConfig{
-		HelmPath: helmPath,
-	}
+	log.Printf("Helm binary path: %s", helmBinPath)
 
-	return config, nil
+	return &ProviderConfig{
+		HelmBinPath: helmBinPath,
+		HelmVersion: helmVersion,
+	}, nil
 }
 
-func installHelmCLI(helmVersion string) (helmPath string, err error) {
+func installHelmCLI(helmVersion string) (helmBinPath string, err error) {
 	cacheDir := filepath.Join(os.TempDir(), "terrahelm_cache")
 	if err := os.MkdirAll(cacheDir, os.ModePerm); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %v", err)
@@ -55,17 +68,17 @@ func installHelmCLI(helmVersion string) (helmPath string, err error) {
 	fmt.Printf("[DEBUG] using cacheDir: %v\n", cacheDir)
 
 	helmDir := filepath.Join(cacheDir, helmVersion)
-	helmPath = filepath.Join(helmDir, "helm")
-	if _, err := os.Stat(helmPath); err == nil {
-		log.Printf("Using cached Helm binary: %s", helmPath)
-		return helmPath, nil
+	helmBinPath = filepath.Join(helmDir, "helm")
+	if _, err := os.Stat(helmBinPath); err == nil {
+		log.Printf("Using cached Helm binary: %s", helmBinPath)
+		return helmBinPath, nil
 	}
 
 	if err := os.MkdirAll(helmDir, os.ModePerm); err != nil {
 		return "", fmt.Errorf("failed to create Helm directory: %v", err)
 	}
 
-	installCmd := exec.Command("curl", "-fsSL", "-o", filepath.Join(helmDir, "get_helm.sh"), "https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3")
+	installCmd := exec.Command("curl", "-fsSL", "-o", filepath.Join(helmDir, "get_helm.sh"), GET_HELM_URL)
 	if err := installCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to download Helm installation script: %v", err)
 	}
@@ -75,7 +88,7 @@ func installHelmCLI(helmVersion string) (helmPath string, err error) {
 		return "", fmt.Errorf("failed to set execute permission on Helm installation script: %v", err)
 	}
 
-	installHelmCmd := exec.Command(filepath.Join(helmDir, "get_helm.sh"), "--version", "v"+helmVersion)
+	installHelmCmd := exec.Command(filepath.Join(helmDir, "get_helm.sh"), "--version", helmVersion)
 	installHelmCmd.Env = append(os.Environ(),
 		"HELM_INSTALL_DIR="+helmDir,
 		"USE_SUDO=false",
@@ -85,9 +98,7 @@ func installHelmCLI(helmVersion string) (helmPath string, err error) {
 		return "", fmt.Errorf("failed to install Helm: %v\nOutput: %s", err, output)
 	}
 
-	// helmPath = filepath.Join(helmDir, "helm")
+	log.Printf("Helm version: %s is installed at: %s", helmVersion, helmBinPath)
 
-	log.Printf("Helm version: %s is installed at: %s", helmVersion, helmPath)
-
-	return helmPath, nil
+	return helmBinPath, nil
 }
