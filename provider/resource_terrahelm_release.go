@@ -93,6 +93,9 @@ func resourceHelmRelease() *schema.Resource {
 				Description: "The maximum time to wait for the Helm chart installation to complete",
 				Type:        schema.TypeString,
 				Optional:    true,
+				DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
+					return true
+				},
 			},
 
 			// Computed values for storing additional info in the state
@@ -133,12 +136,8 @@ func resourceHelmReleaseDelete(ctx context.Context, d *schema.ResourceData, m in
 	namespace := d.Get("namespace").(string)
 
 	config := m.(*ProviderConfig)
-	helmBinPath := config.HelmBinPath
-
-	cmd := exec.Command(helmBinPath, "uninstall", name, "--namespace", namespace)
-	cmd = setHelmKubeAuth(cmd, config.KubeAuth)
+	cmd := config.HelmCmd("uninstall", name, "--namespace", namespace)
 	output, err := cmd.CombinedOutput()
-
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to uninstall Helm release: %v, Output: %s", err, output))
 	}
@@ -153,11 +152,9 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	namespace := d.Get("namespace").(string)
 
 	config := m.(*ProviderConfig)
-	helmBinPath := config.HelmBinPath
 
-	// Retrieve the Helm chart information
-	listCmd := exec.Command(helmBinPath, "list", "-n", namespace, "-f", name, "-o", "json")
-	listCmd = setHelmKubeAuth(listCmd, config.KubeAuth)
+	tflog.Debug(ctx, "getting the Helm chart information")
+	listCmd := config.HelmCmd("list", "-n", namespace, "-f", name, "-o", "json")
 	output, err := listCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm chart information: %s", err))
@@ -193,9 +190,16 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	d.Set("release_revision", helmChart.Revision)
 	d.Set("release_status", helmChart.Status)
 
-	// Retrieve the Helm release values
-	valuesCmd := exec.Command(helmBinPath, "get", "values", "-n", namespace, name, "-a", "-o", "json")
-	valuesCmd = setHelmKubeAuth(valuesCmd, config.KubeAuth)
+	tflog.Debug(ctx, "getting user Helm values")
+	userValuesCmd := config.HelmCmd("get", "values", "-n", namespace, name, "-o", "yaml")
+	userValuesOutput, err := userValuesCmd.Output()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to retrieve Helm values: %s", err))
+	}
+	d.Set("values", string(userValuesOutput))
+
+	tflog.Debug(ctx, "getting release Helm values")
+	valuesCmd := config.HelmCmd("get", "values", "-n", namespace, name, "-a", "-o", "json")
 	valuesOutput, err := valuesCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
@@ -233,7 +237,6 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	timeout := d.Get("timeout").(string)
 
 	config := m.(*ProviderConfig)
-	helmBinPath := config.HelmBinPath
 	cacheDir := config.CacheDir
 
 	// Clone the Git repository or use the cache
@@ -251,7 +254,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	}
 
 	fullChartPath := filepath.Join(repoPath, chartPath)
-	depCmd := exec.Command(helmBinPath, "dependency", "build", "--logtostderr", fullChartPath)
+	depCmd := config.HelmCmd("dependency", "build", "--logtostderr", fullChartPath)
 	var helmDepStderr bytes.Buffer
 	depCmd.Stderr = &helmDepStderr
 	if err := depCmd.Run(); err != nil {
@@ -263,8 +266,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	if isUpdate {
 		cmd = "upgrade"
 	}
-
-	helmCmd := exec.Command(helmBinPath, cmd, name, fullChartPath)
+	helmCmd := config.HelmCmd(cmd, name, fullChartPath)
 	if namespace != "" {
 		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
 	}
@@ -303,7 +305,6 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		}
 		helmCmd.Args = append(helmCmd.Args, "--timeout", timeout)
 	}
-	helmCmd = setHelmKubeAuth(helmCmd, config.KubeAuth)
 	helmCmd.Args = append(helmCmd.Args, "--logtostderr")
 
 	var helmCmdStdout, helmCmdStderr bytes.Buffer
@@ -354,36 +355,4 @@ func jsonMapToStringMap(rawValues map[string]interface{}) (map[string]string, er
 	}
 
 	return converted, nil
-}
-
-func setHelmKubeAuth(helmCmd *exec.Cmd, kubeAuth KubeAuth) *exec.Cmd {
-	if kubeAuth.KubeAPIServer != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-apiserver", kubeAuth.KubeAPIServer)
-	}
-	if kubeAuth.KubeAsUser != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-as-user", kubeAuth.KubeAsUser)
-	}
-	if kubeAuth.KubeAsGroup != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-as-group", kubeAuth.KubeAsGroup)
-	}
-	if kubeAuth.KubeCAFile != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-ca-file", kubeAuth.KubeCAFile)
-	}
-	if kubeAuth.KubeContext != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-context", kubeAuth.KubeContext)
-	}
-	if kubeAuth.KubeInsecureSkipTLSVerify {
-		helmCmd.Args = append(helmCmd.Args, "--kube-insecure-skip-tls-verify")
-	}
-	if kubeAuth.KubeTLSServerName != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-tls-server-name", kubeAuth.KubeTLSServerName)
-	}
-	if kubeAuth.KubeToken != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-token", kubeAuth.KubeToken)
-	}
-	if kubeAuth.Kubeconfig != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kubeconfig", kubeAuth.Kubeconfig)
-	}
-
-	return helmCmd
 }

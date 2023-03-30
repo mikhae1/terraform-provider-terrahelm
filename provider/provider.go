@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -20,6 +21,7 @@ type ProviderConfig struct {
 	HelmVersion string
 	CacheDir    string
 	KubeAuth    KubeAuth
+	HelmCmd     func(args ...string) *exec.Cmd
 }
 
 type KubeAuth struct {
@@ -131,7 +133,7 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 
 	tflog.Debug(ctx, "Init cache directory: "+cacheDir)
 	if err := os.MkdirAll(cacheDir, os.ModePerm); err != nil {
-		return nil, diag.Errorf("failed to create cache directory: %v", err)
+		return nil, diag.Errorf("failed to create cache directory (try to use 'cache_dir' arg): %v", err)
 	}
 
 	if helmBinPath == "" {
@@ -141,25 +143,61 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 		}
 		tflog.Info(ctx, "Helm version: "+helmVersion+" is installed at: "+helmBinPath)
 	}
-
 	tflog.Info(ctx, "Helm binary: "+helmBinPath)
+
+	kubeAuth := KubeAuth{
+		KubeAPIServer:             d.Get("kube_apiserver").(string),
+		KubeAsGroup:               d.Get("kube_as_group").(string),
+		KubeAsUser:                d.Get("kube_as_user").(string),
+		KubeCAFile:                d.Get("kube_ca_file").(string),
+		KubeContext:               d.Get("kube_context").(string),
+		KubeInsecureSkipTLSVerify: d.Get("kube_insecure_skip_tls_verify").(bool),
+		KubeTLSServerName:         d.Get("kube_tls_server_name").(string),
+		KubeToken:                 d.Get("kube_token").(string),
+		Kubeconfig:                d.Get("kubeconfig").(string),
+	}
+
+	helmCmdFunc := func(args ...string) *exec.Cmd {
+		helmCmd := exec.Command(helmBinPath, args...)
+
+		if kubeAuth.KubeAPIServer != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-apiserver", kubeAuth.KubeAPIServer)
+		}
+		if kubeAuth.KubeAsUser != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-as-user", kubeAuth.KubeAsUser)
+		}
+		if kubeAuth.KubeAsGroup != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-as-group", kubeAuth.KubeAsGroup)
+		}
+		if kubeAuth.KubeCAFile != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-ca-file", kubeAuth.KubeCAFile)
+		}
+		if kubeAuth.KubeContext != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-context", kubeAuth.KubeContext)
+		}
+		if kubeAuth.KubeInsecureSkipTLSVerify {
+			helmCmd.Args = append(helmCmd.Args, "--kube-insecure-skip-tls-verify")
+		}
+		if kubeAuth.KubeTLSServerName != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-tls-server-name", kubeAuth.KubeTLSServerName)
+		}
+		if kubeAuth.KubeToken != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kube-token", kubeAuth.KubeToken)
+		}
+		if kubeAuth.Kubeconfig != "" {
+			helmCmd.Args = append(helmCmd.Args, "--kubeconfig", kubeAuth.Kubeconfig)
+		}
+
+		tflog.Debug(ctx, "Helm Command:"+strings.Join(helmCmd.Args, " "))
+		return helmCmd
+	}
 
 	return &ProviderConfig{
 		HelmBinPath: helmBinPath,
 		HelmVersion: helmVersion,
 		CacheDir:    cacheDir,
-
-		KubeAuth: KubeAuth{
-			KubeAPIServer:             d.Get("kube_apiserver").(string),
-			KubeAsGroup:               d.Get("kube_as_group").(string),
-			KubeAsUser:                d.Get("kube_as_user").(string),
-			KubeCAFile:                d.Get("kube_ca_file").(string),
-			KubeContext:               d.Get("kube_context").(string),
-			KubeInsecureSkipTLSVerify: d.Get("kube_insecure_skip_tls_verify").(bool),
-			KubeTLSServerName:         d.Get("kube_tls_server_name").(string),
-			KubeToken:                 d.Get("kube_token").(string),
-			Kubeconfig:                d.Get("kubeconfig").(string),
-		},
+		KubeAuth:    kubeAuth,
+		HelmCmd:     helmCmdFunc,
 	}, nil
 }
 

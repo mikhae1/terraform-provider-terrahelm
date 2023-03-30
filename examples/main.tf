@@ -19,7 +19,7 @@ resource "terrahelm_release" "nginx" {
   chart_path       = "bitnami/nginx"
   namespace        = "nginx"
   create_namespace = true
-  timeout          = 30
+  timeout          = 60
   chart_version    = "13.2.1"
 
   values = <<EOF
@@ -27,19 +27,19 @@ resource "terrahelm_release" "nginx" {
   EOF
 }
 
+output "release_status" {
+  value = terrahelm_release.nginx.release_status
+}
+
 data "terrahelm_release" "nginx" {
   name      = "nginx"
   namespace = "nginx"
+
+  depends_on = [
+    terrahelm_release.nginx
+  ]
 }
 
 output "data_nginx" {
   value = data.terrahelm_release.nginx
 }
-
-output "release_status" {
-  value = terrahelm_release.nginx.release_status
-}
-
-# output "release_values" {
-#   value = terrahelm_release.nginx.release_values
-# }
