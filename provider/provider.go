@@ -111,10 +111,16 @@ func Provider() *schema.Provider {
 				Description: "Path to the kubeconfig file",
 			},
 		},
+
+		ConfigureContextFunc: configureProvider,
+
+		DataSourcesMap: map[string]*schema.Resource{
+			"terrahelm_release": dataSourceHelmRelease(),
+		},
+
 		ResourcesMap: map[string]*schema.Resource{
 			"terrahelm_release": resourceHelmRelease(),
 		},
-		ConfigureContextFunc: configureProvider,
 	}
 }
 
@@ -136,7 +142,7 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 		tflog.Info(ctx, "Helm version: "+helmVersion+" is installed at: "+helmBinPath)
 	}
 
-	tflog.Info(ctx, "Helm binary path: "+helmBinPath)
+	tflog.Info(ctx, "Helm binary: "+helmBinPath)
 
 	return &ProviderConfig{
 		HelmBinPath: helmBinPath,

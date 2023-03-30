@@ -65,7 +65,7 @@ func resourceHelmRelease() *schema.Resource {
 				Description: "Whether to create the Kubernetes namespace if it does not exist",
 				Type:        schema.TypeBool,
 				Optional:    true,
-				Default:     true,
+				Default:     false,
 			},
 			"values": {
 				Description: "A YAML string representing the values to be passed to the Helm chart",
@@ -136,6 +136,7 @@ func resourceHelmReleaseDelete(ctx context.Context, d *schema.ResourceData, m in
 	helmBinPath := config.HelmBinPath
 
 	cmd := exec.Command(helmBinPath, "uninstall", name, "--namespace", namespace)
+	cmd = setHelmKubeAuth(cmd, config.KubeAuth)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -155,7 +156,8 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	helmBinPath := config.HelmBinPath
 
 	// Retrieve the Helm chart information
-	listCmd := exec.Command(helmBinPath, "list", "-n", namespace, "-f", fmt.Sprintf("^%s$", name), "-o", "json")
+	listCmd := exec.Command(helmBinPath, "list", "-n", namespace, "-f", name, "-o", "json")
+	listCmd = setHelmKubeAuth(listCmd, config.KubeAuth)
 	output, err := listCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm chart information: %s", err))
@@ -193,6 +195,7 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 
 	// Retrieve the Helm release values
 	valuesCmd := exec.Command(helmBinPath, "get", "values", "-n", namespace, name, "-a", "-o", "json")
+	valuesCmd = setHelmKubeAuth(valuesCmd, config.KubeAuth)
 	valuesOutput, err := valuesCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
@@ -230,7 +233,6 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	timeout := d.Get("timeout").(string)
 
 	config := m.(*ProviderConfig)
-	kauth := config.KubeAuth
 	helmBinPath := config.HelmBinPath
 	cacheDir := config.CacheDir
 
@@ -263,7 +265,6 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	}
 
 	helmCmd := exec.Command(helmBinPath, cmd, name, fullChartPath)
-
 	if namespace != "" {
 		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
 	}
@@ -290,33 +291,6 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 
 		helmCmd.Args = append(helmCmd.Args, "-f", valuesFilePath)
 	}
-	if kauth.KubeAPIServer != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-apiserver", kauth.KubeAPIServer)
-	}
-	if kauth.KubeAsUser != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-as-user", kauth.KubeAsUser)
-	}
-	if kauth.KubeAsGroup != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-as-group", kauth.KubeAsGroup)
-	}
-	if kauth.KubeCAFile != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-ca-file", kauth.KubeCAFile)
-	}
-	if kauth.KubeContext != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-context", kauth.KubeContext)
-	}
-	if kauth.KubeInsecureSkipTLSVerify {
-		helmCmd.Args = append(helmCmd.Args, "--kube-insecure-skip-tls-verify")
-	}
-	if kauth.KubeTLSServerName != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-tls-server-name", kauth.KubeTLSServerName)
-	}
-	if kauth.KubeToken != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kube-token", kauth.KubeToken)
-	}
-	if kauth.Kubeconfig != "" {
-		helmCmd.Args = append(helmCmd.Args, "--kubeconfig", kauth.Kubeconfig)
-	}
 	if wait {
 		helmCmd.Args = append(helmCmd.Args, "--wait")
 	}
@@ -329,6 +303,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		}
 		helmCmd.Args = append(helmCmd.Args, "--timeout", timeout)
 	}
+	helmCmd = setHelmKubeAuth(helmCmd, config.KubeAuth)
 	helmCmd.Args = append(helmCmd.Args, "--logtostderr")
 
 	var helmCmdStdout, helmCmdStderr bytes.Buffer
@@ -336,7 +311,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	helmCmd.Stdout = &helmCmdStdout
 	helmCmdString := strings.Join(helmCmd.Args, " ")
 
-	tflog.Info(ctx, "\nInvoking Helm command:\n\t"+helmCmdString+"\n")
+	tflog.Info(ctx, fmt.Sprintf("\n  Running helm command:\n  %s\n", helmCmdString))
 
 	if err := helmCmd.Run(); err != nil {
 		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String()))
@@ -379,4 +354,36 @@ func jsonMapToStringMap(rawValues map[string]interface{}) (map[string]string, er
 	}
 
 	return converted, nil
+}
+
+func setHelmKubeAuth(helmCmd *exec.Cmd, kubeAuth KubeAuth) *exec.Cmd {
+	if kubeAuth.KubeAPIServer != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-apiserver", kubeAuth.KubeAPIServer)
+	}
+	if kubeAuth.KubeAsUser != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-as-user", kubeAuth.KubeAsUser)
+	}
+	if kubeAuth.KubeAsGroup != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-as-group", kubeAuth.KubeAsGroup)
+	}
+	if kubeAuth.KubeCAFile != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-ca-file", kubeAuth.KubeCAFile)
+	}
+	if kubeAuth.KubeContext != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-context", kubeAuth.KubeContext)
+	}
+	if kubeAuth.KubeInsecureSkipTLSVerify {
+		helmCmd.Args = append(helmCmd.Args, "--kube-insecure-skip-tls-verify")
+	}
+	if kubeAuth.KubeTLSServerName != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-tls-server-name", kubeAuth.KubeTLSServerName)
+	}
+	if kubeAuth.KubeToken != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kube-token", kubeAuth.KubeToken)
+	}
+	if kubeAuth.Kubeconfig != "" {
+		helmCmd.Args = append(helmCmd.Args, "--kubeconfig", kubeAuth.Kubeconfig)
+	}
+
+	return helmCmd
 }
