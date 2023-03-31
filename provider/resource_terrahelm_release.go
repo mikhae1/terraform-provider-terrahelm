@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"gopkg.in/yaml.v3"
 )
 
 func resourceHelmRelease() *schema.Resource {
@@ -71,6 +72,10 @@ func resourceHelmRelease() *schema.Resource {
 				Description: "A YAML string representing the values to be passed to the Helm chart",
 				Type:        schema.TypeString,
 				Optional:    true,
+				StateFunc: func(val interface{}) string {
+					safeVal, _ := sanitizeYAMLString(val.(string))
+					return safeVal
+				},
 			},
 			"chart_version": {
 				Description: "The version of the Helm chart to install",
@@ -82,12 +87,18 @@ func resourceHelmRelease() *schema.Resource {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     false,
+				DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
+					return true
+				},
 			},
 			"atomic": {
 				Description: "Whether to roll back the Helm chart installation if it fails",
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     true,
+				DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
+					return true
+				},
 			},
 			"timeout": {
 				Description: "The maximum time to wait for the Helm chart installation to complete",
@@ -196,7 +207,12 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm values: %s", err))
 	}
-	d.Set("values", string(userValuesOutput))
+
+	safeVal, err := sanitizeYAMLString(string(userValuesOutput))
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to sanitize Helm release values: %s", err))
+	}
+	d.Set("values", safeVal)
 
 	tflog.Debug(ctx, "getting release Helm values")
 	valuesCmd := config.HelmCmd("get", "values", "-n", namespace, name, "-a", "-o", "json")
@@ -325,6 +341,25 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 
 	// Read the release status to update the Terraform state
 	return resourceHelmReleaseRead(ctx, d, m)
+}
+
+func sanitizeYAMLString(yamlString string) (string, error) {
+	if strings.TrimSpace(yamlString) == "" {
+		return "", nil
+	}
+
+	var parsedYAML interface{}
+	err := yaml.Unmarshal([]byte(yamlString), &parsedYAML)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	output, err := yaml.Marshal(parsedYAML)
+	if err != nil {
+		return "", fmt.Errorf("failed to re-serialize YAML: %w", err)
+	}
+
+	return string(output), nil
 }
 
 func jsonMapToStringMap(rawValues map[string]interface{}) (map[string]string, error) {

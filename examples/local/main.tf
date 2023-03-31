@@ -2,7 +2,7 @@ terraform {
   required_providers {
     terrahelm = {
       source  = "local/mikhae1/terrahelm"
-      version = "0.1.0"
+      version = "1.0.0"
     }
   }
 }
@@ -20,10 +20,13 @@ resource "terrahelm_release" "nginx" {
   namespace        = "nginx"
   create_namespace = true
   timeout          = 60
-  chart_version    = "13.2.1"
+  atomic           = true
 
   values = <<EOF
-  replicaCount: 1
+  replicaCount: 2
+  serviceAccount:
+    create: true
+    name: nginx
   EOF
 }
 
