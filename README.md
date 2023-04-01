@@ -1,6 +1,6 @@
 # TerraHelm Provider
 
-Terrahelm is a third-party [Terraform](https://www.terraform.io/) provider that allows managing [Helm](https://helm.sh/) releases using the Helm CLI.
+**Terrahelm** is a third-party [Terraform](https://www.terraform.io/) provider that allows managing [Helm](https://helm.sh/) releases using the Helm CLI.
 
 It's worth mentioning that Terraform might not be the hero of Helm deployment orchestration, but if you're set on teaming them up, utilizing the Helm CLI directly is the most effective approach. This provider downloads and installs the Helm binary if it is not already installed, and provides the necessary configuration options to connect to a Kubernetes cluster. Using the Helm CLI makes it much easier to debug release installations and perform other Helm-related tasks.
 
