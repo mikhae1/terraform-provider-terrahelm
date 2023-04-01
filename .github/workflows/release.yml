@@ -10,25 +10,26 @@ jobs:
   build-release:
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go
-      uses: actions/setup-go@v3
-      with:
-        go-version: 1.20.2
-        check-latest: true
-
     - name: Check out code
       uses: actions/checkout@v3
 
-    - name: Download dependencies
-      run: |
-        go mod tidy
-        go mod download
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '^1.20'
 
-    - name: Install gox
-      run: go get -u github.com/mitchellh/gox
+    - name: Download dependencies
+      run:
+        go install
+
+    - name: Run unit tests
+      run:
+        make test
 
     - name: Build release files
-      run: make build-release
+      run: |
+        go install github.com/mitchellh/gox@latest
+        make build-release
 
     - name: Archive release artifacts
       uses: actions/upload-artifact@v3

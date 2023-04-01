@@ -3,6 +3,8 @@ VERSION = 1.0.0
 RELEASE_DIR = release
 RELEASE_PLATFORMS = darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 
+GOX_BIN :=$(shell go env GOPATH)/bin/gox
+
 TF_DEBUG_DIR = examples/local
 TF_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 TF_LOCAL_PATH := $(TF_DEBUG_DIR)/terraform.d/plugins/local/mikhae1/terrahelm/$(VERSION)/$(TF_ARCH)
@@ -39,12 +41,12 @@ test:
 clean:
 	rm -rf $(RELEASE_DIR)/* $(PROVIDER)
 
-build-release: clean build
+build-release: clean build test
 	@echo "=> Building release binaries..."
 	@mkdir -p $(RELEASE_DIR)
-	gox -osarch="$(RELEASE_PLATFORMS)" -output="$(RELEASE_DIR)/{{.OS}}-{{.Arch}}/$(PROVIDER)"
+	$(GOX_BIN) -osarch="$(RELEASE_PLATFORMS)" -output="$(RELEASE_DIR)/{{.OS}}-{{.Arch}}/$(PROVIDER)"
 
-release: build-release test
+release: build-release
 	tfplugindocs || true
 	@echo "=> Creating release packages..."
 	@for platform in $(shell echo "$(RELEASE_PLATFORMS)" | tr ' ' '\n'); do \
@@ -54,10 +56,19 @@ release: build-release test
 	done
 
 build:
-	go mod tidy
+	go install
 	go build -o $(PROVIDER)
 
 install: build
 	@echo Installing $(PROVIDER) v$(VERSION)
 	mkdir -p $(TF_HOME_PATH)
 	cp $(PROVIDER) $(TF_HOME_PATH)/
+
+vet:
+	@echo "go vet ."
+	@go vet $$(go list ./... | grep -v vendor/) ; if [ $$? -eq 1 ]; then \
+		echo ""; \
+		echo "Vet found suspicious constructs. Please check the reported constructs"; \
+		echo "and fix them if necessary before submitting the code for review."; \
+		exit 1; \
+	fi

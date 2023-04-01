@@ -17,7 +17,7 @@ To install the TerraHelm Provider, follow these steps:
 ### Manual
 
 Download the appropriate binary for your platform from the [Releases](https://github.com/mikhae1/terrahelm/releases/latest) page.
-Unzip and move the downloaded binary to the Terraform plugins directory (e.g., `~/.terraform.d/plugins/github.com/mikhae1/terrahelm/$VERSION/$TF_ARCH/`).
+Unzip and move the downloaded binary to the Terraform plugins directory (e.g., `~/.terraform.d/plugins/github.com/mikhae1/terrahelm/1.0.0/linux_amd64/`).
 
 ### Build
 
