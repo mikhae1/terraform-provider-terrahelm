@@ -1,14 +1,14 @@
 # TerraHelm Provider
 
-The TerraHelm Provider is a plugin for [Terraform](https://www.terraform.io/) that allows managing [Helm](https://helm.sh/) releases using the Helm CLI.
+Terrahelm is a third-party [Terraform](https://www.terraform.io/) provider that allows managing [Helm](https://helm.sh/) releases using the Helm CLI.
 
-It is important to note that Terraform may not be the best tool for orchestrating Helm deployments, but if you choose to use it, utilizing the Helm CLI itself is the most effective approach. This provider downloads and installs the Helm binary if it is not already installed, and provides the necessary configuration options to connect to a Kubernetes cluster. Using the Helm CLI makes it much easier to debug release installations and perform other Helm-related tasks.
+It's worth mentioning that Terraform might not be the hero of Helm deployment orchestration, but if you're set on teaming them up, utilizing the Helm CLI directly is the most effective approach. This provider downloads and installs the Helm binary if it is not already installed, and provides the necessary configuration options to connect to a Kubernetes cluster. Using the Helm CLI makes it much easier to debug release installations and perform other Helm-related tasks.
 
 ## Features
 
-- Downloads and installs any Helm binary to `cache_dir` directory, easy to switch, no unnecessary files created
-- Simplifies debugging release installations and performing other Helm-related tasks by manually launching the same commands provider uses
-- Support downloading charts directly from git repositories
+- **Binary Management**: Terrahelm downloads and installs any Helm binary to the `cache_dir` directory (`.terraform` by default). This feature makes it easy to switch between different Helm versions.
+- **Debugging**: Terrahelm simplifies the process of debugging and troubleshooting any issues that may arise during the deployment process by allowing users to manually run the same commands provider uses. You can quickly identify and fix problems by using the CLI's various commands and options.
+- **Git Repository Support**: Terrahelm supports downloading charts directly from git repositories, which simplifies the integration of custom Helm charts into your configuration.
 
 ## Installation
 
