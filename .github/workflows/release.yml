@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.20.2
+        check-latest: true
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Download dependencies
+      run: |
+        go mod tidy
+        go mod download
+
+    - name: Install gox
+      run: go get -u github.com/mitchellh/gox
+
+    - name: Build release files
+      run: make build-release
+
+    - name: Archive release artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-artifacts
+        path: release/
+
+  create-release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download release artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: release-artifacts
+        path: release/
+
+    - name: Create release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: 'release/*.zip'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
