@@ -3,12 +3,12 @@
 page_title: "terrahelm_release Data Source - terraform-provider-terrahelm"
 subcategory: ""
 description: |-
-  
+  Helm chart data
 ---
 
 # terrahelm_release (Data Source)
 
-
+Helm chart data
 
 
 

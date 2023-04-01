@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -213,17 +215,18 @@ func installHelmCLI(helmVersion string, cacheDir string) (helmBinPath string, er
 		return "", fmt.Errorf("failed to create Helm directory: %v", err)
 	}
 
-	installCmd := exec.Command("curl", "-fsSL", "-o", filepath.Join(helmDir, "get_helm.sh"), GET_HELM_URL)
-	if err := installCmd.Run(); err != nil {
+	installScriptPath := filepath.Join(helmDir, "get_helm.sh")
+
+	if err := downloadFile(GET_HELM_URL, installScriptPath); err != nil {
 		return "", fmt.Errorf("failed to download Helm installation script: %v", err)
 	}
 
-	chmodCmd := exec.Command("chmod", "700", filepath.Join(helmDir, "get_helm.sh"))
+	chmodCmd := exec.Command("chmod", "700", installScriptPath)
 	if err := chmodCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to set execute permission on Helm installation script: %v", err)
 	}
 
-	installHelmCmd := exec.Command(filepath.Join(helmDir, "get_helm.sh"), "--version", helmVersion)
+	installHelmCmd := exec.Command(installScriptPath, "--version", helmVersion)
 	installHelmCmd.Env = append(os.Environ(),
 		"HELM_INSTALL_DIR="+helmDir,
 		"USE_SUDO=false",
@@ -234,4 +237,29 @@ func installHelmCLI(helmVersion string, cacheDir string) (helmBinPath string, er
 	}
 
 	return helmBinPath, nil
+}
+
+func downloadFile(url, destPath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file: HTTP status %v", resp.Status)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save file: %v", err)
+	}
+
+	return nil
 }

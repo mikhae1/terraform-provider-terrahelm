@@ -23,6 +23,7 @@ import (
 
 func resourceHelmRelease() *schema.Resource {
 	return &schema.Resource{
+		Description: "Helm chart release deployment",
 		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 			return resourceHelmReleaseCreateOrUpdate(ctx, d, m, false)
 		},
@@ -31,7 +32,6 @@ func resourceHelmRelease() *schema.Resource {
 		},
 		ReadContext:   resourceHelmReleaseRead,
 		DeleteContext: resourceHelmReleaseDelete,
-
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Description: "Name of the Helm release",
@@ -39,16 +39,22 @@ func resourceHelmRelease() *schema.Resource {
 				Required:    true,
 				ForceNew:    true,
 			},
+			"helm_repository": {
+				Description: "URL of the Helm repository containing the Helm chart",
+				Type:        schema.TypeString,
+				Optional:    true,
+				ForceNew:    true,
+			},
 			"git_repository": {
 				Description: "URL of the Git repository containing the Helm chart",
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
 			},
 			"git_reference": {
 				Description: "Reference (e.g. branch, tag, commit hash) to checkout in the Git repository",
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 			},
 			"chart_path": {
 				Description: "The path within the Git repository where the Helm chart is located",
@@ -138,6 +144,21 @@ func resourceHelmRelease() *schema.Resource {
 				Type:        schema.TypeString,
 				Computed:    true,
 			},
+		},
+
+		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, m interface{}) error {
+			_, gitRepoOk := d.GetOk("git_repository")
+			_, helmRepoOk := d.GetOk("helm_repository")
+
+			if !gitRepoOk && !helmRepoOk {
+				return fmt.Errorf("either 'git_repository' or 'helm_repository' must be set")
+			}
+
+			if gitRepoOk && helmRepoOk {
+				return fmt.Errorf("only one of 'git_repository' or 'helm_repository' can be set")
+			}
+
+			return nil
 		},
 	}
 }
@@ -241,6 +262,7 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 // resourceHelmReleaseCreate installs a Helm chart from a Git repository
 func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m interface{}, isUpdate bool) diag.Diagnostics {
 	name := d.Get("name").(string)
+	helmRepository := d.Get("helm_repository").(string)
 	gitRepository := d.Get("git_repository").(string)
 	gitReference := d.Get("git_reference").(string)
 	chartPath := d.Get("chart_path").(string)
@@ -255,26 +277,30 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	config := m.(*ProviderConfig)
 	cacheDir := config.CacheDir
 
-	// Clone the Git repository or use the cache
-	repoName := gitRepository[strings.LastIndex(gitRepository, "/")+1:]
-	repoPath := filepath.Join(cacheDir, "repos", repoName, gitReference)
-	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
-			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
+	fullChartPath := filepath.Join(helmRepository, chartPath)
+	repoName := helmRepository
+	if helmRepository == "" {
+		repoName := gitRepository[strings.LastIndex(gitRepository, "/")+1:]
+		// Clone the Git repository or use the cache
+		repoPath := filepath.Join(cacheDir, "repos", repoName, gitReference)
+		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
+				return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
+			}
+
+			cloneCmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
+			if err := cloneCmd.Run(); err != nil {
+				return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
+			}
 		}
 
-		cloneCmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
-		if err := cloneCmd.Run(); err != nil {
-			return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
+		fullChartPath := filepath.Join(repoPath, chartPath)
+		depCmd := config.HelmCmd("dependency", "build", "--logtostderr", fullChartPath)
+		var helmDepStderr bytes.Buffer
+		depCmd.Stderr = &helmDepStderr
+		if err := depCmd.Run(); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to run 'helm dependency build': %s\nHelm output: %s", err, helmDepStderr.String()))
 		}
-	}
-
-	fullChartPath := filepath.Join(repoPath, chartPath)
-	depCmd := config.HelmCmd("dependency", "build", "--logtostderr", fullChartPath)
-	var helmDepStderr bytes.Buffer
-	depCmd.Stderr = &helmDepStderr
-	if err := depCmd.Run(); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to run 'helm dependency build': %s\nHelm output: %s", err, helmDepStderr.String()))
 	}
 
 	// Install the Helm chart
@@ -296,7 +322,13 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		// Create a YAML file from the "values" string
 		hash := sha256.Sum256([]byte(values))
 		hashStr := hex.EncodeToString(hash[:8])
-		valuesPath := filepath.Join(cacheDir, "values", repoName, gitReference)
+		valuesPath := filepath.Join(cacheDir, "values", repoName)
+		if gitReference != "" {
+			valuesPath = filepath.Join(valuesPath, gitReference)
+		} else if repoName != "" {
+			valuesPath = filepath.Join(valuesPath, repoName)
+		}
+
 		if err := os.MkdirAll(valuesPath, os.ModePerm); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
 		}

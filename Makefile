@@ -1,5 +1,7 @@
 PROVIDER = terraform-provider-terrahelm
 VERSION = 1.0.0
+RELEASE_DIR = release
+RELEASE_PLATFORMS = darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 
 TF_DEBUG_DIR = examples/local
 TF_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
@@ -31,10 +33,28 @@ tf-install: build
 	ln -sf $(abspath $(PROVIDER)) $(TF_LOCAL_PATH)/$(PROVIDER)
 	$(MAKE) tf-plan
 
-release:
-	tfplugindocs
+test:
+	go test -v ./provider
+
+clean:
+	rm -rf $(RELEASE_DIR)/* $(PROVIDER)
+
+build-release: clean build
+	@echo "=> Building release binaries..."
+	@mkdir -p $(RELEASE_DIR)
+	gox -osarch="$(RELEASE_PLATFORMS)" -output="$(RELEASE_DIR)/{{.OS}}-{{.Arch}}/$(PROVIDER)"
+
+release: build-release test
+	tfplugindocs || true
+	@echo "=> Creating release packages..."
+	@for platform in $(shell echo "$(RELEASE_PLATFORMS)" | tr ' ' '\n'); do \
+		os=$$(echo $$platform | cut -d'/' -f1); \
+		arch=$$(echo $$platform | cut -d'/' -f2); \
+		zip -r $(RELEASE_DIR)/$(PROVIDER)-$(VERSION)-$$os-$$arch.zip $(RELEASE_DIR)/$$os-$$arch; \
+	done
 
 build:
+	go mod tidy
 	go build -o $(PROVIDER)
 
 install: build

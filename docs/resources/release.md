@@ -3,12 +3,12 @@
 page_title: "terrahelm_release Resource - terraform-provider-terrahelm"
 subcategory: ""
 description: |-
-  
+  Helm chart release deployment
 ---
 
 # terrahelm_release (Resource)
 
-
+Helm chart release deployment
 
 
 
@@ -18,8 +18,6 @@ description: |-
 ### Required
 
 - `chart_path` (String) The path within the Git repository where the Helm chart is located
-- `git_reference` (String) Reference (e.g. branch, tag, commit hash) to checkout in the Git repository
-- `git_repository` (String) URL of the Git repository containing the Helm chart
 - `name` (String) Name of the Helm release
 
 ### Optional
@@ -27,6 +25,9 @@ description: |-
 - `atomic` (Boolean) Whether to roll back the Helm chart installation if it fails
 - `chart_version` (String) The version of the Helm chart to install
 - `create_namespace` (Boolean) Whether to create the Kubernetes namespace if it does not exist
+- `git_reference` (String) Reference (e.g. branch, tag, commit hash) to checkout in the Git repository
+- `git_repository` (String) URL of the Git repository containing the Helm chart
+- `helm_repository` (String) URL of the Helm repository containing the Helm chart
 - `namespace` (String) The Kubernetes namespace where the Helm chart will be installed
 - `timeout` (String) The maximum time to wait for the Helm chart installation to complete
 - `values` (String) A YAML string representing the values to be passed to the Helm chart

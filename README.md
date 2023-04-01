@@ -4,13 +4,44 @@ The TerraHelm Provider is a plugin for [Terraform](https://www.terraform.io/) th
 
 It is important to note that Terraform may not be the best tool for orchestrating Helm deployments, but if you choose to use it, utilizing the Helm CLI itself is the most effective approach. This provider downloads and installs the Helm binary if it is not already installed, and provides the necessary configuration options to connect to a Kubernetes cluster. Using the Helm CLI makes it much easier to debug release installations and perform other Helm-related tasks.
 
+## Features
+
+- Downloads and installs any Helm binary to `cache_dir` directory, easy to switch, no unnecessary files created
+- Simplifies debugging release installations and performing other Helm-related tasks by manually launching the same commands provider uses
+- Support downloading charts directly from git repositories
+
 ## Installation
 
-In order to build and install the `terraform-provider-terrahelm` provider from source, you need to have Go installed. Please run the following command:
+To install the TerraHelm Provider, follow these steps:
+
+### Manual
+
+Download the appropriate binary for your platform from the [Releases](https://github.com/mikhae1/terrahelm/releases/latest) page.
+Unzip and move the downloaded binary to the Terraform plugins directory (e.g., `~/.terraform.d/plugins/github.com/mikhae1/terrahelm/$VERSION/$TF_ARCH/`).
+
+### Build
+
+In order to build and install the `terraform-provider-terrahelm` provider from source, you need to have Go installed.
+Please run the following command:
 
     make install
 
-After that, run Terraform provider initialization:
+## Init
+
+After the binary is installed, add a provider section:
+
+```hcl
+terraform {
+  required_providers {
+    terrahelm = {
+      source  = "github.com/mikhae1/terrahelm"
+      version = "1.0.0"
+    }
+  }
+}
+```
+
+Finally, run the Terraform provider initialization:
 
     terraform init
 

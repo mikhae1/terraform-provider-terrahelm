@@ -10,6 +10,7 @@ import (
 
 func dataSourceHelmRelease() *schema.Resource {
 	return &schema.Resource{
+		Description: "Helm chart data",
 		ReadContext: dataSourceHelmReleaseRead,
 		Schema: map[string]*schema.Schema{
 			"name": {

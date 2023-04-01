@@ -21,8 +21,8 @@ resource "terrahelm_release" "nginx" {
   create_namespace = true
 
   values = <<EOF
-replicaCount: 1
-EOF
+  replicaCount: 1
+  EOF
 }
 
 output "release_status" {

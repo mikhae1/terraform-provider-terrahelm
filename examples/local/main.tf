@@ -8,7 +8,7 @@ terraform {
 }
 
 provider "terrahelm" {
-  helm_version = "v3.7.1"
+  helm_version = "v3.9.1"
   kube_context = "rancher-desktop"
 }
 
@@ -23,7 +23,7 @@ resource "terrahelm_release" "nginx" {
   atomic           = true
 
   values = <<EOF
-  replicaCount: 2
+  replicaCount: 1
   serviceAccount:
     create: true
     name: nginx
@@ -45,4 +45,25 @@ data "terrahelm_release" "nginx" {
 
 output "data_nginx" {
   value = data.terrahelm_release.nginx
+}
+
+resource "terrahelm_release" "fluentd" {
+  name             = "fluentd"
+  helm_repository  = "bitnami"
+  chart_path       = "fluentd"
+  namespace        = "fluentd"
+  create_namespace = true
+}
+
+data "terrahelm_release" "fluentd" {
+  name      = "fluentd"
+  namespace = "fluentd"
+
+  depends_on = [
+    terrahelm_release.fluentd
+  ]
+}
+
+output "data_fluentd" {
+  value = data.terrahelm_release.fluentd
 }
