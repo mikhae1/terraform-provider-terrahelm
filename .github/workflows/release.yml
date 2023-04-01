@@ -19,37 +19,21 @@ jobs:
         go-version: '^1.20'
 
     - name: Download dependencies
-      run:
-        go install
+      run: go install
 
     - name: Run unit tests
-      run:
-        make test
+      run: make test
 
     - name: Build release files
-      run: |
-        go install github.com/mitchellh/gox@latest
-        make build-release
-
-    - name: Archive release artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: release-artifacts
-        path: release/
+      run: make build
 
   create-release:
     needs: build-release
     runs-on: ubuntu-latest
     steps:
-    - name: Download release artifacts
-      uses: actions/download-artifact@v3
+    - name: Terraform Provider Release
+      uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/community.yml@v2
+      secrets:
+        gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
       with:
-        name: release-artifacts
-        path: release/
-
-    - name: Create release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: 'release/*.zip'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        setup-go-version-file: 'go.mod'
