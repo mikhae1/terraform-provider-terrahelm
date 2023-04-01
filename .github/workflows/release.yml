@@ -27,13 +27,10 @@ jobs:
     - name: Build release files
       run: make build
 
-  create-release:
-    needs: build-release
-    runs-on: ubuntu-latest
-    steps:
-    - name: Terraform Provider Release
-      uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/community.yml@v2
-      secrets:
-        gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
-      with:
-        setup-go-version-file: 'go.mod'
+  terraform-provider-release:
+    name: Terraform Provider Release
+    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/community.yml@v2
+    secrets:
+      gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
+    with:
+      setup-go-version-file: 'go.mod'
