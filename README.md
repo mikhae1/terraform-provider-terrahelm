@@ -47,20 +47,33 @@ Finally, run the Terraform provider initialization:
 
 ## Usage
 
-The provider can be used to manage Helm releases using the `terrahelm_release` resource and data source. A `terrahelm_release` resource represents a Helm release that is installed on a Kubernetes cluster.
+The provider can be used to manage Helm releases using the `terrahelm_release` resource and data source. A `terrahelm_release` represents a Helm release that is installed on a Kubernetes cluster.
 
-For example, to install a Helm chart using the TerraHelm Provider:
+### Git repository
 
 ```hcl
-provider "terrahelm" {
-  helm_version = "v3.7.1"
-  kube_context = "kind-cluster"
-}
+resource "terrahelm_release" "nginx" {
+  name             = "nginx"
+  git_repository   = "https://github.com/bitnami/charts.git"
+  git_reference    = "main"
+  chart_path       = "bitnami/nginx"
+  namespace        = "nginx"
+  create_namespace = true
 
-resource "terrahelm_release" "example" {
-  name       = "my-chart"
-  chart      = "stable/mysql"
-  namespace  = "default"
+  values = <<EOF
+  replicaCount: 1
+  EOF
+}
+```
+
+### Helm repository
+
+```
+resource "terrahelm_release" "mysql" {
+  name             = "mysql"
+  helm_repository  = "bitnami"
+  chart_path       = "mysql"
+
   values     = [data.template_file.values.rendered]
 }
 
@@ -73,21 +86,30 @@ data "template_file" "values" {
 }
 ```
 
+### Dara source
+
+```hcl
+data "terrahelm_release" "nginx" {
+  name      = "nginx"
+  namespace = "nginx"
+}
+```
+
 ## Documentation
 
 - [Provider docs](./docs/index.md)
 
 ## Troubleshooting
 
-If you encounter any issues with the TerraHelm Provider, you can use the Helm CLI to debug the issue. You can find the command in the provider's logs by setting `TF_LOG=INFO` environment variable:
+If you encounter any issues with the TerraHelm Provider, you can use the Helm CLI to debug the issues. You can find a Helm command in the provider's logs by setting `TF_LOG=INFO` environment variable:
 
 ```sh
 $ TF_LOG=INFO terraform apply
 ...
 terrahelm_release.nginx: Still creating... [2m50s elapsed]
-terrahelm_release.nginx: Still creating... [3m0s elapsed]2023-03-30T18:46:53.636+0300 [INFO]  provider.terraform-provider-terrahelm:
+terrahelm_release.nginx: Still creating... [3m0s elapsed]2023-04-01T18:46:53.636+0300 [INFO]  provider.terraform-provider-terrahelm:
   Running helm command:
   .terraform/terrahelm_cache/helm/v3.7.1/helm install nginx .terraform/terrahelm_cache/repos/charts.git/main/bitnami/nginx --kube-context rancher-desktop --namespace nginx --create-namespace --version 13.2.1 -f .terraform/terrahelm_cache/values/charts.git/main/nginx-f6749b77d453441e-values.yaml --logtostderr
 ```
 
-You can invoke helm commands directly from the command line using the same helm binary that the provider uses. This can be useful for verifying that the Helm binary is working correctly, and for troubleshooting issues with specific Helm releases.
+You can invoke helm commands directly from the command line using the same helm binary that the provider uses. This can be useful for verifying that the Helm binary is working correctly and for troubleshooting issues with specific Helm releases.
