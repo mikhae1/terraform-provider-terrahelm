@@ -1,5 +1,6 @@
 PROVIDER = terraform-provider-terrahelm
-VERSION = 1.0.0
+VERSION := $(shell git describe --abbrev=0 --tags | sed 's/^v//')
+
 RELEASE_DIR = release
 RELEASE_PLATFORMS = darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 
@@ -46,8 +47,8 @@ build-release: clean build test
 	@mkdir -p $(RELEASE_DIR)
 	$(GOX_BIN) -osarch="$(RELEASE_PLATFORMS)" -output="$(RELEASE_DIR)/{{.OS}}-{{.Arch}}/$(PROVIDER)"
 
-release: build-release
-	tfplugindocs || true
+release: build-release vet
+	tfplugindocs
 	@echo "=> Creating release packages..."
 	@for platform in $(shell echo "$(RELEASE_PLATFORMS)" | tr ' ' '\n'); do \
 		os=$$(echo $$platform | cut -d'/' -f1); \
