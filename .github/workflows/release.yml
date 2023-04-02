@@ -6,8 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-release:
+  tests:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code
@@ -30,6 +33,7 @@ jobs:
   terraform-provider-release:
     name: Terraform Provider Release
     uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/community.yml@v2
+    needs: tests
     secrets:
       gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
       gpg-private-key-passphrase: '${{ secrets.PASSPHRASE }}'
