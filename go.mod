@@ -7,5 +7,3 @@ require (
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.26.1
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-require google.golang.org/genproto v0.0.0-20200904004341-0bd0a958aa1d // indirect
