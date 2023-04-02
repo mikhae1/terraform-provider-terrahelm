@@ -1,8 +1,10 @@
 terraform {
+  required_version = ">= 0.13"
+
   required_providers {
     terrahelm = {
-      source  = "github.com/mikhae1/terrahelm"
-      version = "1.0.0"
+      source  = "mikhae1/terrahelm"
+      version = ">= 1.0.0"
     }
   }
 }

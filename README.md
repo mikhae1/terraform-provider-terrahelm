@@ -12,7 +12,18 @@ It's worth mentioning that Terraform might not be the hero of Helm deployment or
 
 ## Installation
 
-To install the TerraHelm Provider, follow these steps:
+To install the TerraHelm Provider, add a provider requirements section to your code:, so it can be installed and managed automatically by Terraform:
+
+```hcl
+terraform {
+  required_providers {
+    terrahelm = {
+      source  = "mikhae1/terrahelm"
+      version = ">= 1.0.0"
+    }
+  }
+}
+```
 
 ### Manual
 
@@ -26,20 +37,6 @@ Please run the following command:
 
     make install
 
-## Init
-
-After the binary is installed, add a provider section:
-
-```hcl
-terraform {
-  required_providers {
-    terrahelm = {
-      source  = "github.com/mikhae1/terrahelm"
-      version = "1.0.0"
-    }
-  }
-}
-```
 
 Finally, run the Terraform provider initialization:
 
@@ -94,6 +91,8 @@ data "terrahelm_release" "nginx" {
   namespace = "nginx"
 }
 ```
+
+You can find the examples [here](./examples).
 
 ## Documentation
 
