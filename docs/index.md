@@ -8,13 +8,13 @@ description: |-
 
 # terrahelm Provider
 
-**Terrahelm** is a third-party [Terraform](https://www.terraform.io/) provider that allows managing [Helm](https://helm.sh/) releases using the Helm CLI.
+**Terrahelm** is a third-party [Terraform](https://www.terraform.io/) provider that allows managing [Helm](https://helm.sh/) releases via Helm CLI.
 
 ## Features
 
-- **Binary Management**: Terrahelm downloads and installs any Helm binary to the `cache_dir` directory (`.terraform` by default). This feature makes it easy to switch between different Helm versions.
-- **Debugging**: Terrahelm simplifies the process of debugging and troubleshooting any issues that may arise during the deployment process by allowing users to manually run the same commands provider uses. You can quickly identify and fix problems by using the CLI's various commands and options.
-- **Git Repository Support**: Terrahelm supports downloading charts directly from git repositories, which simplifies the integration of custom Helm charts into your configuration.
+- **Binary Management**: Terrahelm downloads and installs specified Helm binary to the `cache_dir` directory (`.terraform/terrahelm_cache/`). This enables seamless switching between different Helm versions with minimal hassle.
+- **Git Repository Integration**: Terrahelm supports direct downloads of charts from Git repositories, streamlining the integration of custom Helm charts into your configuration.
+- **Debugging**: Simplifying the troubleshooting process, TerraHelm empowers users to manually execute the same Helm CLI commands utilized by the provider.
 
 
 ## Usage
