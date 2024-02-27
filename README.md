@@ -2,15 +2,7 @@
 
 **TerraHelm** is a third-party [Terraform](https://www.terraform.io/) provider designed for managing [Helm](https://helm.sh/) releases via Helm CLI.
 
-Looking to integrate Helm releases seamlessly into your existing Terraform infrastructure while keeping an eye on future GitOps adoption? TerraHelm is your answer. It streamlines the process by downloading and installing the Helm binary and providing essential configuration options for the Helm release management. While Terraform itself might not be the ideal tool for the full orchestration of Helm deployments, incorporating the Helm CLI directly through Terraform allows for efficient debugging and simplifies other Helm-related tasks. TerraHelm offers a flexible approach to adopting IaC principles, empowering you to enhance your infrastructure management now while effortlessly laying the groundwork for a full GitOps transition in the future.
-
-## Why Terraform is not good for Helm Release Management:
-
-- **Longer Release Time**: Compared to using the Helm CLI directly, Terraform introduces additional processing overhead, leading to longer deployment times. This becomes significant as deployment numbers or complexity increases. 
-- **Terraform State Lock**: Terraform operations lock the state file, requiring manual intervention in scenarios where the lock hasn't been released. 
-- **Security Concerns**: Sensitive information, such as passwords or API keys, stored in Terraform state or value templates can introduce security risks if not managed properly.
-- **Configuration Drift**: Resources in Kubernetes are dynamic and often change throughout their lifecycle. This can lead to configuration drift, where the Terraform state becomes misaligned with the actual state of the resources in the cluster.
-- **Limited Functionality**: While the Helm provider offers certain functionalities, it might not provide the full spectrum of features and capabilities available in dedicated Helm CLI for advanced deployment orchestration scenarios.
+Looking to integrate Helm releases seamlessly into your existing Terraform infrastructure while keeping an eye on future GitOps adoption? Look no further. TerraHelm streamlines the process by downloading and installing the Helm binary and providing essential configuration options for the Helm release management. While Terraform itself might not be the ideal tool for the full orchestration of Helm deployments, incorporating the Helm CLI directly through Terraform allows for efficient debugging and simplifies other Helm-related tasks. TerraHelm offers a flexible approach to adopting IaC principles, empowering you to enhance your infrastructure management now while effortlessly laying the groundwork for a full GitOps transition in the future.
 
 ## Features
 
@@ -129,3 +121,11 @@ You can now invoke helm commands directly from the command line using the same h
 ```sh
 $ .terraform/terrahelm_cache/helm/v3.7.1/helm ...
 ```
+
+### When Terraform is not good for Helm Release Management:
+
+- **Longer Release Times**: Compared to using the Helm CLI directly, Terraform introduces additional processing overhead, leading to longer deployment times. This becomes significant as deployment numbers or complexity increases. 
+- **Terraform State Lock**: Sometimes it requires manual intervention in situations where the lock has not been properly released.
+- **Security Concerns**: Sensitive information, such as passwords or API keys, stored in Terraform state or value templates can introduce security risks if not managed properly.
+- **Configuration Drift**: Resources in Kubernetes are dynamic and often change throughout their lifecycle. This leads to configuration drift, where the Terraform state becomes misaligned with the actual state of the resources in the cluster.
+- **Limited Functionality**: While the Helm provider offers certain functionalities, it might not provide the full spectrum of features and capabilities available in dedicated Helm CLI for advanced deployment orchestration scenarios.
