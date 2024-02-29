@@ -106,12 +106,26 @@ func resourceHelmRelease() *schema.Resource {
 					return true
 				},
 			},
+			"debug": {
+				Description: "Enable debug mode for the Helm CLI",
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+			},
 			"timeout": {
 				Description: "The maximum time to wait for the Helm chart installation to complete",
 				Type:        schema.TypeString,
 				Optional:    true,
 				DiffSuppressFunc: func(k, oldValue, newValue string, d *schema.ResourceData) bool {
 					return true
+				},
+			},
+			"custom_args": {
+				Description: "Additional arguments to pass to the Helm CLI",
+				Type:        schema.TypeList,
+				Optional:    true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
 				},
 			},
 
@@ -273,28 +287,40 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	wait := d.Get("wait").(bool)
 	atomic := d.Get("atomic").(bool)
 	timeout := d.Get("timeout").(string)
+	debug := d.Get("debug").(bool)
+	customArgs := d.Get("custom_args").([]interface{})
 
 	config := m.(*ProviderConfig)
 	cacheDir := config.CacheDir
 
 	fullChartPath := filepath.Join(helmRepository, chartPath)
 	repoName := helmRepository
-	if helmRepository == "" {
+	if helmRepository == "" && gitRepository != "" {
 		repoName := gitRepository[strings.LastIndex(gitRepository, "/")+1:]
-		// Clone the Git repository or use the cache
 		repoPath := filepath.Join(cacheDir, "repos", repoName, gitReference)
-		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
-			if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
-				return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
-			}
+		fullChartPath = filepath.Join(repoPath, chartPath)
 
-			cloneCmd := exec.Command("git", "clone", "--branch", gitReference, gitRepository, repoPath)
-			if err := cloneCmd.Run(); err != nil {
-				return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s", err))
+		// Remove directory if repoPath exists
+		if _, err := os.Stat(repoPath); err == nil {
+			if err := os.RemoveAll(repoPath); err != nil {
+					return diag.FromErr(fmt.Errorf("failed to empty existing directory: %s", err))
 			}
 		}
 
-		fullChartPath := filepath.Join(repoPath, chartPath)
+		// Create repoPath directory
+		if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
+		}
+
+		// Clone the Git repository or use the cached directory
+		cloneCmd := exec.Command("git", "clone", "--depth", "1", "--single-branch", "--branch", gitReference, gitRepository, repoPath)
+		var cloneCmdStderr bytes.Buffer
+		cloneCmd.Stderr = &cloneCmdStderr
+		if err := cloneCmd.Run(); err != nil {
+			tflog.Info(ctx, fmt.Sprintf("\n Clone command:\n  %s\n", cloneCmd))
+			return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s\nCommand output: %s", err, cloneCmdStderr.String()))
+		}
+
 		depCmd := config.HelmCmd("dependency", "build", "--logtostderr", fullChartPath)
 		var helmDepStderr bytes.Buffer
 		depCmd.Stderr = &helmDepStderr
@@ -347,6 +373,9 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	if atomic {
 		helmCmd.Args = append(helmCmd.Args, "--atomic")
 	}
+	if debug {
+		helmCmd.Args = append(helmCmd.Args, "--debug")
+	}
 	if timeout != "" {
 		if _, err := strconv.Atoi(timeout); err == nil {
 			timeout = timeout + "s"
@@ -354,6 +383,10 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		helmCmd.Args = append(helmCmd.Args, "--timeout", timeout)
 	}
 	helmCmd.Args = append(helmCmd.Args, "--logtostderr")
+
+	for _, arg := range customArgs {
+		helmCmd.Args = append(helmCmd.Args, arg.(string))
+	}
 
 	var helmCmdStdout, helmCmdStderr bytes.Buffer
 	helmCmd.Stderr = &helmCmdStderr
@@ -363,7 +396,12 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	tflog.Info(ctx, fmt.Sprintf("\n  Running helm command:\n  %s\n", helmCmdString))
 
 	if err := helmCmd.Run(); err != nil {
-		return diag.FromErr(fmt.Errorf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String()))
+		errMsg := fmt.Sprintf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String())
+		if debug {
+			errMsg += fmt.Sprintf("\nHelm stdout: %s", helmCmdStdout.String())
+			errMsg += fmt.Sprintf("\nHelm stderr: %s", helmCmdStderr.String())
+		}
+		return diag.FromErr(fmt.Errorf(errMsg))
 	}
 
 	// Set the ID for the resource

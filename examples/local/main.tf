@@ -1,8 +1,7 @@
 terraform {
   required_providers {
     terrahelm = {
-      source  = "local/mikhae1/terrahelm"
-      version = "1.0.0"
+      source = "local/mikhae1/terrahelm"
     }
   }
 }
@@ -26,7 +25,6 @@ resource "terrahelm_release" "nginx" {
   replicaCount: 1
   serviceAccount:
     create: true
-    name: nginx
   EOF
 }
 
@@ -53,6 +51,7 @@ resource "terrahelm_release" "fluentd" {
   chart_path       = "fluentd"
   namespace        = "fluentd"
   create_namespace = true
+  debug            = true
 }
 
 data "terrahelm_release" "fluentd" {

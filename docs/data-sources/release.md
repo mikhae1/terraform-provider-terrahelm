@@ -32,3 +32,5 @@ Helm chart data
 - `release_revision` (String) The revision of the installed Helm release
 - `release_status` (String) The current status of the installed Helm release
 - `release_values` (Map of String) The values passed to the Helm chart at installation time
+
+

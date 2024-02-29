@@ -25,6 +25,8 @@ Helm chart release deployment
 - `atomic` (Boolean) Whether to roll back the Helm chart installation if it fails
 - `chart_version` (String) The version of the Helm chart to install
 - `create_namespace` (Boolean) Whether to create the Kubernetes namespace if it does not exist
+- `custom_args` (List of String) Additional arguments to pass to the Helm CLI
+- `debug` (Boolean) Enable debug mode for the Helm CLI
 - `git_reference` (String) Reference (e.g. branch, tag, commit hash) to checkout in the Git repository
 - `git_repository` (String) URL of the Git repository containing the Helm chart
 - `helm_repository` (String) URL of the Helm repository containing the Helm chart
@@ -41,3 +43,5 @@ Helm chart release deployment
 - `release_revision` (String) The revision of the installed Helm release
 - `release_status` (String) The current status of the installed Helm release
 - `release_values` (Map of String) The values passed to the Helm chart at installation time
+
+
