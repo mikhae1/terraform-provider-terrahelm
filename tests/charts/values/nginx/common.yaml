@@ -1,0 +1,3 @@
+serviceAccount:
+  annotations:
+    managed.by: terrahelm
