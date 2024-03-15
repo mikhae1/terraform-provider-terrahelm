@@ -1,5 +1,6 @@
 .DS_Store
 release/
+debug/
 
 **/.terraform*
 **/terraform.tfstate*
@@ -8,3 +9,5 @@ release/
 
 **/vendor/*
 **/terraform-provider-*
+
+TODO

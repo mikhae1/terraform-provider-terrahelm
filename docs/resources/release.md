@@ -17,22 +17,25 @@ Helm chart release deployment
 
 ### Required
 
-- `chart_path` (String) The path within the Git repository where the Helm chart is located
 - `name` (String) Name of the Helm release
 
 ### Optional
 
 - `atomic` (Boolean) Whether to roll back the Helm chart installation if it fails
+- `chart_path` (String) The relative path to the Helm chart
+- `chart_repository` (String) URL of the chart repository containing the Helm chart, Helm cli is used for downloading
+- `chart_url` (String) URL to the Helm chart, it supports advanced parameters, archives and variety of protocols: http::, file::, s3::, gcs::, hg::
 - `chart_version` (String) The version of the Helm chart to install
 - `create_namespace` (Boolean) Whether to create the Kubernetes namespace if it does not exist
 - `custom_args` (List of String) Additional arguments to pass to the Helm CLI
 - `debug` (Boolean) Enable debug mode for the Helm CLI
 - `git_reference` (String) Reference (e.g. branch, tag, commit hash) to checkout in the Git repository
-- `git_repository` (String) URL of the Git repository containing the Helm chart
-- `helm_repository` (String) URL of the Helm repository containing the Helm chart
+- `git_repository` (String) URL of the git repository containing the Helm chart, git cli is used for downloading)
+- `insecure` (Boolean) Disable checking certificates (not safe)
 - `namespace` (String) The Kubernetes namespace where the Helm chart will be installed
 - `timeout` (String) The maximum time to wait for the Helm chart installation to complete
 - `values` (String) A YAML string representing the values to be passed to the Helm chart
+- `values_files` (List of String) A list of the values file names or URLs to be passed to the Helm chart
 - `wait` (Boolean) Whether to wait for the Helm chart installation to complete
 
 ### Read-Only

@@ -3,18 +3,20 @@ package provider
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"crypto/md5"
+
+	"github.com/hashicorp/go-getter"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -39,14 +41,20 @@ func resourceHelmRelease() *schema.Resource {
 				Required:    true,
 				ForceNew:    true,
 			},
-			"helm_repository": {
-				Description: "URL of the Helm repository containing the Helm chart",
+			"chart_repository": {
+				Description: "URL of the chart repository containing the Helm chart, Helm cli is used for downloading",
 				Type:        schema.TypeString,
 				Optional:    true,
 				ForceNew:    true,
 			},
 			"git_repository": {
-				Description: "URL of the Git repository containing the Helm chart",
+				Description: "URL of the git repository containing the Helm chart, git cli is used for downloading)",
+				Type:        schema.TypeString,
+				Optional:    true,
+				ForceNew:    true,
+			},
+			"chart_url": {
+				Description: "URL to the Helm chart, it supports advanced parameters, archives and variety of protocols: http::, file::, s3::, gcs::, hg::",
 				Type:        schema.TypeString,
 				Optional:    true,
 				ForceNew:    true,
@@ -57,9 +65,15 @@ func resourceHelmRelease() *schema.Resource {
 				Optional:    true,
 			},
 			"chart_path": {
-				Description: "The path within the Git repository where the Helm chart is located",
+				Description: "The relative path to the Helm chart",
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
+			},
+			"insecure": {
+				Description: "Disable checking certificates (not safe)",
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
 			},
 			"namespace": {
 				Description: "The Kubernetes namespace where the Helm chart will be installed",
@@ -82,6 +96,14 @@ func resourceHelmRelease() *schema.Resource {
 					safeVal, _ := sanitizeYAMLString(val.(string))
 					return safeVal
 				},
+			},
+			"values_files": {
+				Description: "A list of the values file names or URLs to be passed to the Helm chart",
+				Type:        schema.TypeList,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Optional: true,
 			},
 			"chart_version": {
 				Description: "The version of the Helm chart to install",
@@ -123,10 +145,10 @@ func resourceHelmRelease() *schema.Resource {
 			"custom_args": {
 				Description: "Additional arguments to pass to the Helm CLI",
 				Type:        schema.TypeList,
-				Optional:    true,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
+				Optional: true,
 			},
 
 			// Computed values for storing additional info in the state
@@ -162,21 +184,36 @@ func resourceHelmRelease() *schema.Resource {
 
 		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, m interface{}) error {
 			_, gitRepoOk := d.GetOk("git_repository")
-			_, helmRepoOk := d.GetOk("helm_repository")
+			_, helmRepoOk := d.GetOk("chart_repository")
+			_, chartUrlOk := d.GetOk("chart_url")
+			_, gitRefOk := d.GetOk("git_reference")
 
-			if !gitRepoOk && !helmRepoOk {
-				return fmt.Errorf("either 'git_repository' or 'helm_repository' must be set")
+			numFieldsSet := 0
+			if gitRepoOk {
+				numFieldsSet++
+			}
+			if helmRepoOk {
+				numFieldsSet++
+			}
+			if chartUrlOk {
+				numFieldsSet++
 			}
 
-			if gitRepoOk && helmRepoOk {
-				return fmt.Errorf("only one of 'git_repository' or 'helm_repository' can be set")
+			if numFieldsSet == 0 {
+				return fmt.Errorf("either 'git_repository', 'chart_repository', 'chart_url' must be set")
 			}
-
+			if numFieldsSet != 1 {
+				return fmt.Errorf("only one of 'git_repository', 'chart_repository', or 'chart_url' can be set")
+			}
+			if gitRefOk && !gitRepoOk {
+				return fmt.Errorf("'git_reference' can be used only with 'git_repository'")
+			}
 			return nil
 		},
 	}
 }
 
+// resourceHelmReleaseDelete deletes Helm release
 func resourceHelmReleaseDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
@@ -193,6 +230,7 @@ func resourceHelmReleaseDelete(ctx context.Context, d *schema.ResourceData, m in
 	return nil
 }
 
+// resourceHelmReleaseRead reads Helm release state
 func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	name := d.Get("name").(string)
 	namespace := d.Get("namespace").(string)
@@ -273,99 +311,177 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	return nil
 }
 
-// resourceHelmReleaseCreate installs a Helm chart from a Git repository
+// resourceHelmReleaseCreateOrUpdate downloads and installs or upgrades a Helm chart from a given source
 func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceData, m interface{}, isUpdate bool) diag.Diagnostics {
+	// Retrieve input parameters from the schema
 	name := d.Get("name").(string)
-	helmRepository := d.Get("helm_repository").(string)
+	chartRepository := d.Get("chart_repository").(string)
 	gitRepository := d.Get("git_repository").(string)
 	gitReference := d.Get("git_reference").(string)
+	insecure := d.Get("insecure").(bool)
 	chartPath := d.Get("chart_path").(string)
+	chartURL := d.Get("chart_url").(string)
 	namespace := d.Get("namespace").(string)
-	create_namespace := d.Get("create_namespace").(bool)
-	chart_version := d.Get("chart_version").(string)
+	createNamespace := d.Get("create_namespace").(bool)
+	chartVersion := d.Get("chart_version").(string)
 	values := d.Get("values").(string)
+	valuesFiles := d.Get("values_files").([]interface{})
 	wait := d.Get("wait").(bool)
 	atomic := d.Get("atomic").(bool)
 	timeout := d.Get("timeout").(string)
 	debug := d.Get("debug").(bool)
 	customArgs := d.Get("custom_args").([]interface{})
 
+	// Retrieve provider config
 	config := m.(*ProviderConfig)
 	cacheDir := config.CacheDir
 
-	fullChartPath := filepath.Join(helmRepository, chartPath)
-	repoName := helmRepository
-	if helmRepository == "" && gitRepository != "" {
-		repoName := gitRepository[strings.LastIndex(gitRepository, "/")+1:]
-		repoPath := filepath.Join(cacheDir, "repos", repoName, gitReference)
+	fullChartPath := filepath.Join(chartRepository, chartPath)
+	repoPath := ""
+
+	if chartRepository == "" {
+		repoPath = filepath.Join(cacheDir, "repos", name+"-"+generateHash(gitRepository+chartURL))
 		fullChartPath = filepath.Join(repoPath, chartPath)
 
-		// Remove directory if repoPath exists
-		if _, err := os.Stat(repoPath); err == nil {
-			if err := os.RemoveAll(repoPath); err != nil {
-					return diag.FromErr(fmt.Errorf("failed to empty existing directory: %s", err))
+		tflog.Debug(ctx, fmt.Sprintf("Initializing repo directory: '%s'...", repoPath))
+
+		// Remove existing repo path if it exists
+		if gitRepository != "" {
+			if _, err := os.Stat(repoPath); err == nil {
+				if err := os.RemoveAll(repoPath); err != nil {
+					return diag.FromErr(fmt.Errorf("failed to delete existing directory: %s", err))
+				}
 			}
 		}
 
-		// Create repoPath directory
+		// Create repo path directory
 		if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
 		}
 
-		// Clone the Git repository or use the cached directory
-		cloneCmd := exec.Command("git", "clone", "--depth", "1", "--single-branch", "--branch", gitReference, gitRepository, repoPath)
-		var cloneCmdStderr bytes.Buffer
-		cloneCmd.Stderr = &cloneCmdStderr
-		if err := cloneCmd.Run(); err != nil {
-			tflog.Info(ctx, fmt.Sprintf("\n Clone command:\n  %s\n", cloneCmd))
-			return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s\nCommand output: %s", err, cloneCmdStderr.String()))
+		// Clone Git repository if specified
+		if gitRepository != "" {
+			cloneArgs := []string{"clone", "--depth", "1", "--single-branch"}
+			if insecure {
+				cloneArgs = append(cloneArgs, "-c", "http.sslVerify=false")
+			}
+			cloneArgs = append(cloneArgs, "--branch", gitReference, gitRepository, repoPath)
+			cloneCmd := exec.Command(config.GitBinPath, cloneArgs...)
+			var cloneCmdStderr bytes.Buffer
+			cloneCmd.Stderr = &cloneCmdStderr
+			tflog.Info(ctx, fmt.Sprintf("Git Repository cloning: '%s'...", gitRepository))
+			if err := cloneCmd.Run(); err != nil {
+				return diag.FromErr(fmt.Errorf("failed to clone the Git repository: %s\nCommand output: %s", err, cloneCmdStderr.String()))
+			}
 		}
 
-		depCmd := config.HelmCmd("dependency", "build", "--logtostderr", fullChartPath)
+		// Download chart from URL if specified
+		if chartURL != "" {
+			client := &getter.Client{
+				Src:      chartURL,
+				Dst:      repoPath,
+				Insecure: insecure,
+				Mode:     getter.ClientModeAny,
+			}
+
+			tflog.Info(ctx, fmt.Sprintf("Chart URL downloading: '%s' to '%s'...", chartURL, repoPath))
+			if err := client.Get(); err != nil {
+				return diag.FromErr(fmt.Errorf("failed to fetch the repository: %s\nError: %s", gitRepository, err))
+			}
+		}
+
+		// Build Helm dependency
+		depCmd := config.HelmCmd("dependency", "build", fullChartPath)
 		var helmDepStderr bytes.Buffer
 		depCmd.Stderr = &helmDepStderr
+		tflog.Debug(ctx, fmt.Sprintf("Building Helm dependency: '%s'...", fullChartPath))
 		if err := depCmd.Run(); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to run 'helm dependency build': %s\nHelm output: %s", err, helmDepStderr.String()))
 		}
 	}
 
-	// Install the Helm chart
+	// Install or upgrade the Helm chart
 	cmd := "install"
 	if isUpdate {
 		cmd = "upgrade"
 	}
 	helmCmd := config.HelmCmd(cmd, name, fullChartPath)
-	if namespace != "" {
-		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
-	}
-	if create_namespace {
-		helmCmd.Args = append(helmCmd.Args, "--create-namespace")
-	}
-	if chart_version != "" {
-		helmCmd.Args = append(helmCmd.Args, "--version", chart_version)
-	}
-	if values != "" {
-		// Create a YAML file from the "values" string
-		hash := sha256.Sum256([]byte(values))
-		hashStr := hex.EncodeToString(hash[:8])
-		valuesPath := filepath.Join(cacheDir, "values", repoName)
+
+	// Prepare values
+	valuesPath := filepath.Join(cacheDir, "values", name)
+	if values != "" || len(valuesFiles) > 0 {
 		if gitReference != "" {
 			valuesPath = filepath.Join(valuesPath, gitReference)
-		} else if repoName != "" {
-			valuesPath = filepath.Join(valuesPath, repoName)
+		} else if chartRepository != "" {
+			valuesPath = filepath.Join(valuesPath, chartRepository)
+		}
+
+		if err := os.MkdirAll(valuesPath, os.ModePerm); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to create the directory for values: %s", err))
+		}
+	}
+
+	// Handle values files
+	if len(valuesFiles) > 0 {
+		var vfPaths []string
+
+		for _, v := range valuesFiles {
+			vf := v.(string)
+			if strings.HasPrefix(vf, ".") && repoPath != "" {
+				vfPaths = append(vfPaths, filepath.Join(repoPath, vf))
+			} else {
+				vDst := path.Join(valuesPath, fmt.Sprintf("%s-%s-values.yaml", name, generateHash(vf)))
+				client := &getter.Client{
+					Src:      vf,
+					Dst:      vDst,
+					Insecure: insecure,
+					Mode:     getter.ClientModeFile,
+				}
+
+				tflog.Info(ctx, fmt.Sprintf("Value File downloading: '%s' to '%s'...", vf, vDst))
+				if err := client.Get(); err != nil {
+					return diag.FromErr(fmt.Errorf("failed to fetch the repository: %s\nError: %s", gitRepository, err))
+				}
+				vfPaths = append(vfPaths, vDst)
+			}
+		}
+
+		for _, v := range vfPaths {
+			helmCmd.Args = append(helmCmd.Args, "-f", v)
+		}
+	}
+
+	// Handle values string
+	if values != "" {
+		valuesPath := filepath.Join(cacheDir, "values", chartRepository)
+		if gitReference != "" {
+			valuesPath = filepath.Join(valuesPath, gitReference)
+		} else if chartRepository != "" {
+			valuesPath = filepath.Join(valuesPath, chartRepository)
 		}
 
 		if err := os.MkdirAll(valuesPath, os.ModePerm); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to create the directory: %s", err))
 		}
 
-		valuesFilePath := filepath.Join(valuesPath, fmt.Sprintf("%s-%s-values.yaml", name, hashStr))
+		valuesFilePath := filepath.Join(valuesPath, fmt.Sprintf("%s-%s-values.yaml", name, generateHash(values)))
 
-		if err := ioutil.WriteFile(valuesFilePath, []byte(values), os.ModePerm); err != nil {
+		if err := os.WriteFile(valuesFilePath, []byte(values), os.ModePerm); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to create Helm values file: %s", err))
 		}
 
 		helmCmd.Args = append(helmCmd.Args, "-f", valuesFilePath)
+	}
+
+	// Append additional Helm command arguments
+	if namespace != "" {
+		helmCmd.Args = append(helmCmd.Args, "--namespace", namespace)
+	}
+	if createNamespace {
+		helmCmd.Args = append(helmCmd.Args, "--create-namespace")
+	}
+	if chartVersion != "" {
+		helmCmd.Args = append(helmCmd.Args, "--version", chartVersion)
 	}
 	if wait {
 		helmCmd.Args = append(helmCmd.Args, "--wait")
@@ -382,21 +498,20 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		}
 		helmCmd.Args = append(helmCmd.Args, "--timeout", timeout)
 	}
-	helmCmd.Args = append(helmCmd.Args, "--logtostderr")
 
+	// Append custom arguments
 	for _, arg := range customArgs {
 		helmCmd.Args = append(helmCmd.Args, arg.(string))
 	}
 
+	// Execute Helm command
 	var helmCmdStdout, helmCmdStderr bytes.Buffer
 	helmCmd.Stderr = &helmCmdStderr
 	helmCmd.Stdout = &helmCmdStdout
 	helmCmdString := strings.Join(helmCmd.Args, " ")
-
-	tflog.Info(ctx, fmt.Sprintf("\n  Running helm command:\n  %s\n", helmCmdString))
-
+	tflog.Info(ctx, fmt.Sprintf("\n\nRunning Helm command:\n  %s\n\n", helmCmdString))
 	if err := helmCmd.Run(); err != nil {
-		errMsg := fmt.Sprintf("failed to install the Helm chart: %s\nHelm output: %s", err, helmCmdStderr.String())
+		errMsg := fmt.Sprintf("failed to %s the Helm chart: %s\nHelm command: %s\nHelm output: %s", cmd, err, helmCmdString, helmCmdStderr.String())
 		if debug {
 			errMsg += fmt.Sprintf("\nHelm stdout: %s", helmCmdStdout.String())
 			errMsg += fmt.Sprintf("\nHelm stderr: %s", helmCmdStderr.String())
@@ -407,7 +522,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	// Set the ID for the resource
 	d.SetId(fmt.Sprintf("%s/%s", namespace, name))
 
-	log.Printf("Helm chart %s has been installed successfully.\nHelm output: %s", name, helmCmdStdout.String())
+	log.Printf("Helm chart %s has been %s(ed) successfully. Helm output:\n%s", name, cmd, helmCmdStdout.String())
 
 	// Read the release status to update the Terraform state
 	return resourceHelmReleaseRead(ctx, d, m)
@@ -460,4 +575,16 @@ func jsonMapToStringMap(rawValues map[string]interface{}) (map[string]string, er
 	}
 
 	return converted, nil
+}
+
+func generateHash(input string) string {
+	const hashLen = 8
+
+	hash := md5.Sum([]byte(input))
+	hashStr := hex.EncodeToString(hash[:])
+	if hashLen > 0 && hashLen < len(hashStr) {
+		hashStr = hashStr[:hashLen]
+	}
+
+	return hashStr
 }

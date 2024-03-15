@@ -20,6 +20,7 @@ const GET_HELM_URL = "https://raw.githubusercontent.com/helm/helm/master/scripts
 
 type ProviderConfig struct {
 	HelmBinPath string
+	GitBinPath  string
 	HelmVersion string
 	CacheDir    string
 	KubeAuth    KubeAuth
@@ -53,11 +54,17 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("HELM_BIN_PATH", ""),
 				Description: "If provided it will be used instead for installing Helm binary",
 			},
+			"git_bin_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("GIT_BIN_PATH", "git"),
+				Description: "Git binary path to use for git clone",
+			},
 			"cache_dir": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.MultiEnvDefaultFunc([]string{"TF_DATA_DIR", "TH_CACHE"}, filepath.Join(".terraform", "terrahelm_cache")),
-				Description: "Cache directory path",
+				Description: "Provider cache directory path",
 			},
 			"kube_apiserver": {
 				Type:        schema.TypeString,
@@ -131,6 +138,7 @@ func Provider() *schema.Provider {
 func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	helmVersion := d.Get("helm_version").(string)
 	helmBinPath := d.Get("helm_bin_path").(string)
+	gitGitBinPath := d.Get("git_bin_path").(string)
 	cacheDir := d.Get("cache_dir").(string)
 
 	tflog.Debug(ctx, "Init cache directory: "+cacheDir)
@@ -196,6 +204,7 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 
 	return &ProviderConfig{
 		HelmBinPath: helmBinPath,
+		GitBinPath:  gitGitBinPath,
 		HelmVersion: helmVersion,
 		CacheDir:    cacheDir,
 		KubeAuth:    kubeAuth,

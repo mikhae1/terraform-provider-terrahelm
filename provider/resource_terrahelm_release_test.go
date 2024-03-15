@@ -13,6 +13,7 @@ import (
 func MockProviderConfig() *ProviderConfig {
 	return &ProviderConfig{
 		CacheDir: os.TempDir(),
+		GitBinPath: "echo", // override real git command
 		HelmCmd: func(args ...string) *exec.Cmd {
 			output := ""
 			switch cmd := args[0]; cmd {

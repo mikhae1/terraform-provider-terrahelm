@@ -8,18 +8,18 @@ description: |-
 
 # terrahelm Provider
 
-**Terrahelm** is a third-party [Terraform](https://www.terraform.io/) provider that allows managing [Helm](https://helm.sh/) releases via Helm CLI.
+**TerraHelm** is a third-party [Terraform](https://www.terraform.io/) provider that simplifies managing [Helm](https://helm.sh/) releases using [Helm CLI](https://helm.sh/docs/helm/).
 
-## Features
+### Features:
 
-- **Binary Management**: Terrahelm downloads and installs specified Helm binary to the `cache_dir` directory (`.terraform/terrahelm_cache/`). This enables seamless switching between different Helm versions with minimal hassle.
-- **Git Repository Integration**: Terrahelm supports direct downloads of charts from Git repositories, streamlining the integration of custom Helm charts into your configuration.
-- **Debugging**: Simplifying the troubleshooting process, TerraHelm empowers users to manually execute the same Helm CLI commands utilized by the provider.
-
+- Binary Management: TerraHelm downloads and installs specified Helm binary to the `cache_dir` directory (`.terraform/terrahelm_cache/`). This enables seamless switching between different Helm versions with minimal hassle.
+- Integration: TerraHelm supports direct downloads of charts and values from various sources like Git, Mercurial, HTTP, Amazon S3, Google GCP.
+- Better Debugging: Need to troubleshoot your Helm deployments? TerraHelm lets you execute the same Helm CLI commands it uses. This simplifies the process by allowing you to replicate the provider's actions directly.
 
 ## Usage
 
 ```hcl
+# install provider
 terraform {
   required_providers {
     terrahelm = {
@@ -29,20 +29,39 @@ terraform {
   }
 }
 
+# setup provider
 provider "terrahelm" {
+  # install given helm cli version locally into `cache_dir`
   helm_version = "v3.9.4"
   kube_context = "kind"
 }
 
+# release helm chart
 resource "terrahelm_release" "nginx" {
-  name             = "nginx"
-  git_repository   = "https://github.com/bitnami/charts.git"
-  git_reference    = "main"
-  chart_path       = "bitnami/nginx"
+  name       = "nginx"
+  namespace  = "nginx"
 
+  # fetch chart from variety of protocols: http::, file::, s3::, gcs::, hg::
+  chart_url  = "github.com/mikhae1/terraform-provider-terrahelm//tests/charts/?ref=master&depth=1"
+  chart_path = "./nginx"
+
+  # fetch value files from various sources
+  values_files = [
+    "./values/nginx/common.yaml", # relative to chart directory
+    "https://raw.githubusercontent.com/mikhae1/terraform-provider-terrahelm/master/tests/charts/values/nginx/dev-values.yaml",
+  ]
+
+  # override values from value files
   values = <<EOF
-  replicaCount: 1
+  image:
+    tag: "1.25.4
   EOF
+}
+
+# read helm release
+data "terrahelm_release" "nginx" {
+  name      = "nginx"
+  namespace = "nginx"
 }
 ```
 
@@ -52,7 +71,8 @@ resource "terrahelm_release" "nginx" {
 
 ### Optional
 
-- `cache_dir` (String) Cache directory path
+- `cache_dir` (String) Provider cache directory path
+- `git_bin_path` (String) Git binary path to use for git clone
 - `helm_bin_path` (String) If provided it will be used instead for installing Helm binary
 - `helm_version` (String) Helm binary version to install
 - `kube_apiserver` (String) Address and the port for the Kubernetes API server
