@@ -1,3 +1,10 @@
+# v1.1.1
+
+### Bug Fixes
+
+- Remove unused values from data source
+- Update documentation
+
 # v1.1.0
 
 ### New Features

@@ -26,11 +26,6 @@ func dataSourceHelmRelease() *schema.Resource {
 				Default:     "default",
 				ForceNew:    true,
 			},
-			"values": {
-				Description: "A YAML string representing the values to be passed to the Helm chart",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
 			"release_revision": {
 				Description: "The revision of the installed Helm release",
 				Type:        schema.TypeString,

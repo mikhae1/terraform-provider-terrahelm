@@ -96,6 +96,22 @@ resource "terrahelm_release" "nginx" {
 
 The `chart_url` parameter allows fetching charts from various sources, providing much more flexibility compared to `git_repository`.
 
+```hcl
+resource "terrahelm_release" "nginx" {
+  name       = "nginx"
+  namespace  = "nginx"
+
+  # fetch chart from variety of protocols: http::, file::, s3::, gcs::, hg::
+  chart_url  = "github.com/mikhae1/terraform-provider-terrahelm//tests/charts/?ref=master&depth=1"
+  chart_path = "./nginx"
+
+  values_files = [
+    "./values/nginx/common.yaml", # relative to chart directory
+    "https://raw.githubusercontent.com/mikhae1/terraform-provider-terrahelm/master/tests/charts/values/nginx/dev-values.yaml",
+  ]
+}
+```
+
 #### General parameters
 
 - `archive` - The archive format to use to unarchive this file, or "" (empty string) to disable unarchiving
