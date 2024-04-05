@@ -1,0 +1,9 @@
+{{- if .Values.basicAuth.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hello-world.fullname" . }}-auth
+data:
+  username: {{ .Values.basicAuth.username | quote }}
+  password: {{ .Values.basicAuth.password | quote }}
+{{- end }}
