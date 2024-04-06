@@ -150,6 +150,16 @@ func resourceHelmRelease() *schema.Resource {
 				},
 				Optional: true,
 			},
+			"post_renderer": {
+				Description: "Post-renderer command to run",
+				Type:        schema.TypeString,
+				Optional:    true,
+			},
+			"post_renderer_url": {
+				Description: "URL of the post-renderer script to download and use",
+				Type:        schema.TypeString,
+				Optional:    true,
+			},
 
 			// Computed values for storing additional info in the state
 			"release_revision": {
@@ -331,6 +341,8 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	timeout := d.Get("timeout").(string)
 	debug := d.Get("debug").(bool)
 	customArgs := d.Get("custom_args").([]interface{})
+	postRenderer := d.Get("post_renderer").(string)
+	postRendererURL := d.Get("post_renderer_url").(string)
 
 	// Retrieve provider config
 	config := m.(*ProviderConfig)
@@ -497,6 +509,53 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 			timeout = timeout + "s"
 		}
 		helmCmd.Args = append(helmCmd.Args, "--timeout", timeout)
+	}
+
+	renderPath := ""
+	if postRendererURL != "" {
+		renderPath = filepath.Join(config.CacheDir, "postrender", generateHash(postRendererURL), "postrender")
+
+		// if err := os.MkdirAll(filepath.Dir(renderPath), os.ModePerm); err != nil {
+		// 	return diag.FromErr(fmt.Errorf("failed to create directory for post-renderer script: %w", err))
+		// }
+
+		getMode := getter.ClientModeAny
+		getDst := renderPath
+		defaultPostRenderer := "renderer" // TODO: add the .exe for windows
+		if postRenderer == "" {
+			getMode = getter.ClientModeFile
+			getDst = filepath.Join(renderPath, defaultPostRenderer)
+		}
+
+		client := &getter.Client{
+			Src:  postRendererURL,
+			Dst:  getDst,
+			Mode: getMode,
+		}
+
+		tflog.Info(ctx, fmt.Sprintf("Downloading post-renderer script from '%s' to '%s'", postRendererURL, renderPath))
+		if err := client.Get(); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to download post-renderer script: %w", err))
+		}
+
+		if postRenderer == "" {
+			if err := os.Chmod(getDst, 0755); err != nil {
+				return diag.FromErr(fmt.Errorf("failed to make post-renderer script executable: %w", err))
+			}
+			postRenderer = getDst
+		}
+	}
+
+	// Append post-renderer arguments
+	if postRenderer != "" {
+		postRendererArgs := strings.Split(postRenderer, " ")
+		if len(postRendererArgs) > 0 {
+			helmCmd.Args = append(helmCmd.Args, "--post-renderer", postRendererArgs[0])
+			if len(postRendererArgs) > 1 {
+				helmCmd.Args = append(helmCmd.Args, "--post-renderer-args")
+				helmCmd.Args = append(helmCmd.Args, postRendererArgs[1:]...)
+			}
+		}
 	}
 
 	// Append custom arguments

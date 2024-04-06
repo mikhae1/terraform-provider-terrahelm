@@ -116,3 +116,35 @@ resource "terrahelm_release" "chart_values_files" {
     name: overriden
   EOF
 }
+
+#
+# post_renderer_url
+#
+resource "terrahelm_release" "postrender" {
+  name              = "nginx"
+  chart_repository  = "../../tests/charts/"
+  post_renderer_url = "https://github.com/mikhae1/secfetch/releases/latest/download/secfetch-darwin-amd64.zip"
+  chart_path        = "nginx"
+  namespace         = "postrender"
+  create_namespace  = true
+  timeout           = 60
+  atomic            = true
+  debug             = true
+
+  values_files = [
+    "https://raw.githubusercontent.com/mikhae1/terraform-provider-terrahelm/master/tests/charts/values/nginx/common.yaml",
+  ]
+
+  // base64://... values will be replaced by post renderer, it will be
+  # basicAuth:
+  #   username: "adm1n"
+  #   password: "passw0rd"
+  #   secret:  "I am secret"
+  values = <<EOF
+  basicAuth:
+    enabled: true
+    username: "base64://YWRtMW4="
+    password: "base64://cGFzc3cwcmQ="
+    secret: "base64://SSBhbSBzZWNyZXQ=//base64"
+  EOF
+}

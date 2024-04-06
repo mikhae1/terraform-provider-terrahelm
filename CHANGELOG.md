@@ -1,3 +1,10 @@
+# v1.2.0
+
+### New Features
+
+- Add support for `post_renderer` option in terrahelm release
+- Add support for `post_renderer_url` option in terrahelm release
+
 # v1.1.1
 
 ### Bug Fixes
