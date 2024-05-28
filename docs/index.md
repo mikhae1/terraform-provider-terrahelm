@@ -3,18 +3,19 @@
 page_title: "terrahelm Provider"
 subcategory: ""
 description: |-
-  Terrahelm provider allows managing Helm releases using the Helm CLI
+  Terrahelm provider allows managing Helm releases using the Helm CLI and
 ---
 
 # terrahelm Provider
 
-**TerraHelm** is a third-party [Terraform](https://www.terraform.io/) provider that simplifies managing [Helm](https://helm.sh/) releases using [Helm CLI](https://helm.sh/docs/helm/).
+**TerraHelm** is a third-party [Terraform](https://www.terraform.io/) provider that simplifies managing [Helm](https://helm.sh/) releases using [Helm CLI](https://helm.sh/docs/helm/) and providing powerful capabilties, like fetching value files from external sources.
 
 ### Features:
 
-- Binary Management: TerraHelm downloads and installs specified Helm binary to the `cache_dir` directory (`.terraform/terrahelm_cache/`). This enables seamless switching between different Helm versions with minimal hassle.
-- Integration: TerraHelm supports direct downloads of charts and values from various sources like Git, Mercurial, HTTP, Amazon S3, Google GCP.
-- Better Debugging: Need to troubleshoot your Helm deployments? TerraHelm lets you execute the same Helm CLI commands it uses. This simplifies the process by allowing you to replicate the provider's actions directly.
+- Helm CLI Integration: Seamlessly integrates Helm CLI into Terraform, enabling full access to Helm CLI functionalities for improved debugging and operational flexibility.
+- Binary Management: Automatically handles the downloading and installation of the specified Helm binary into a cache_dir directory (`.terraform/terrahelm_cache/` by default). This feature supports effortless version management and switching between different Helm versions.
+- Flexible Sources: Supports fetching Helm charts and value files from a variety of sources including Git, Mercurial, HTTP, Amazon S3, and Google Cloud Storage. This flexibility ensures easy integration of custom and third-party Helm charts into your Terraform configuration.
+- Enhanced Debugging: Provides the capability to execute Helm CLI commands directly, mirroring the operations performed by the provider. This aids in debugging by allowing users to replicate and diagnose issues within the deployment process.
 
 ## Usage
 
@@ -24,7 +25,6 @@ terraform {
   required_providers {
     terrahelm = {
       source  = "mikhae1/terrahelm"
-      version = ">= 1.0.0"
     }
   }
 }
@@ -41,7 +41,7 @@ resource "terrahelm_release" "nginx" {
   name       = "nginx"
   namespace  = "nginx"
 
-  # fetch chart from variety of protocols: http::, file::, s3::, gcs::, hg::
+  # fetch chart from variety of sources: http::, file::, s3::, gcs::, hg::
   chart_url  = "github.com/mikhae1/terraform-provider-terrahelm//tests/charts/?ref=master&depth=1"
   chart_path = "./nginx"
 
@@ -51,14 +51,14 @@ resource "terrahelm_release" "nginx" {
     "https://raw.githubusercontent.com/mikhae1/terraform-provider-terrahelm/master/tests/charts/values/nginx/dev-values.yaml",
   ]
 
-  # override values from value files
+  # override fetched values from value files
   values = <<EOF
   image:
     tag: "1.25.4
   EOF
 }
 
-# read helm release
+# retrieve information using data source
 data "terrahelm_release" "nginx" {
   name      = "nginx"
   namespace = "nginx"

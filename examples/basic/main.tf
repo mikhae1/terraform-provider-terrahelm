@@ -3,8 +3,7 @@ terraform {
 
   required_providers {
     terrahelm = {
-      source  = "mikhae1/terrahelm"
-      version = ">= 1.0.0"
+      source = "mikhae1/terrahelm"
     }
   }
 }

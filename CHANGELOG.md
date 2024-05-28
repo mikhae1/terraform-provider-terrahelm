@@ -1,3 +1,10 @@
+# v1.2.1
+
+### New Features
+
+- Update documentation
+
+
 # v1.2.0
 
 ### New Features

@@ -2,13 +2,22 @@
 
 **TerraHelm** is a third-party [Terraform](https://www.terraform.io/) provider that simplifies managing [Helm](https://helm.sh/) releases using [Helm CLI](https://helm.sh/docs/helm/).
 
-Do you need to seamlessly integrate Helm deployments into your Terraform infrastructure, while also considering a future switch to GitOps? TerraHelm is the solution. While Terraform itself isn't ideal for complex Helm orchestration, TerraHelm bridges the gap by incorporating the Helm CLI directly, which allows for efficient debugging and simplifies other Helm tasks within your Terraform workflows. TerraHelm streamlines the process by managing the Helm binary and providing essential configuration options for Helm releases. Furthermore, TerraHelm empowers a flexible IaC approach: it fetches charts and values from various sources, allowing independent storage of Terraform code, charts, and values. This promotes modularity and reusability within your infrastructure definitions, enhancing your infrastructure management now and laying the groundwork for a smooth GitOps transition in the future.
+This provider is designed for teams looking to integrate Helm deployments seamlessly into their Terraform infrastructure, particularly those considering a transition to GitOps in the future. The HashiCorp Helm provider, though robust in managing basic Helm releases, will encounter limitations with complex Helm orchestration tasks due to several key reasons:
+- Limited Customization and Configuration Flexibility: The HashiCorp Helm provider primarily focuses on deploying Helm charts from repositories and configuring them using Terraform-defined variables. However, in complex deployments, users often need more nuanced control over the deployment process, such as conditional deployments, complex dependencies between charts, or advanced error handling strategies which can be better handled through direct interaction with the Helm CLI.
+- Restricted Access to Helm CLI Features: The HashiCorp provider encapsulates Helm functionality, exposing only a subset of the Helm CLI’s capabilities through Terraform.
+- Debugging and Troubleshooting: Helm deployments can sometimes fail due to issues such as template rendering errors, chart dependencies, or configuration mismatches. While the HashiCorp Helm provider does provide error logs, troubleshooting complex issues might require deeper insights into the Helm operations, such as step-by-step execution logs or interactive debugging sessions, which are more directly accessible through the Helm CLI itself.
+- Version Management: Complex environments might require specific versions of Helm for different applications or different parts of the same application due to already established GitOps integrations, legacy code, or security requirements.
+- Performance Challenges with Large Deployments: The Helm provider can slow down when deploying large charts or multiple Helm charts due to slow Terraform’s state management logic. TerraHelm mitigates this by using the Helm CLI directly, reducing Terraform state bloat and enhancing performance.
+- Integration with External Systems: In complex orchestration tasks, Helm charts might need to interact more extensively with external systems for fetching configuration data or managing secrets, for example. The direct use of Helm CLI allows for custom scripts and hooks that can dynamically interact with these systems during the deployment process, offering a level of customization that the HashiCorp provider might not support natively (see example below).
+
+TerraHelm fills this gap by directly integrating the Helm CLI into the Terraform environment, boosting both the efficiency and simplicity of managing Helm-related tasks and providing powerful capabilties, like downloads of both charts and values independently from various sources like Git, Mercurial, HTTP, Amazon S3, Google GCP, etc.
 
 ## Features
 
-- **Binary Management**: TerraHelm downloads and installs the specified Helm binary to a designated `cache_dir` directory (`.terraform/terrahelm_cache/`), enabling effortless switching between Helm versions.
-- **Integration**: TerraHelm provider supports downloads of charts and values from various sources like Git, Mercurial, HTTP, Amazon S3, Google GCP streamlining the integration of custom Helm charts into your configuration.
-- **Easy Debugging**: Need to troubleshoot your Helm deployments? TerraHelm lets you execute the same Helm CLI commands it uses. This simplifies the process by allowing you to replicate the provider's actions directly.
+- **Helm CLI Integration**: Seamlessly integrates Helm CLI into Terraform, enabling full access to Helm CLI functionalities for improved debugging and operational flexibility.
+- **Binary Management**: Automatically handles the downloading and installation of the specified Helm binary into a cache_dir directory (`.terraform/terrahelm_cache/` by default). This feature supports effortless version management and switching between different Helm versions.
+- **Flexible Sources**: Supports fetching Helm charts and value files from a variety of sources including Git, Mercurial, HTTP, Amazon S3, and Google Cloud Storage. This flexibility ensures easy integration of custom and third-party Helm charts into your Terraform configuration.
+- **Enhanced Debugging**: Provides the capability to execute Helm CLI commands directly, mirroring the operations performed by the provider. This aids in debugging by allowing users to replicate and diagnose issues within the deployment process.
 
 ## Documentation
 
@@ -23,7 +32,6 @@ terraform {
   required_providers {
     terrahelm = {
       source  = "mikhae1/terrahelm"
-      version = ">= 1.0.0"
     }
   }
 }
