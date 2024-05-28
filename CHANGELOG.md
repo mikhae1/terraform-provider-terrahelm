@@ -1,9 +1,14 @@
+# v1.2.2
+
+### New Features
+
+- Security fix
+
 # v1.2.1
 
 ### New Features
 
 - Update documentation
-
 
 # v1.2.0
 
