@@ -16,8 +16,10 @@ description: |-
 - Binary Management: Automatically handles the downloading and installation of the specified Helm binary into a cache_dir directory (`.terraform/terrahelm_cache/` by default). This feature supports effortless version management and switching between different Helm versions.
 - Flexible Sources: Supports fetching Helm charts and value files from a variety of sources including Git, Mercurial, HTTP, Amazon S3, and Google Cloud Storage. This flexibility ensures easy integration of custom and third-party Helm charts into your Terraform configuration.
 - Enhanced Debugging: Provides the capability to execute Helm CLI commands directly, mirroring the operations performed by the provider. This aids in debugging by allowing users to replicate and diagnose issues within the deployment process.
+- Customizable Post-Rendering: Seamlessly integrate post-renderers to inject extra configurations or perform manifest transformations before deployment (like secrets rendering).
+- Improved Performance: By directly executing Helm commands, TerraHelm minimizes the overhead imposed by Terraform state management logic, leading to faster deployments—especially when managing large-scale or multiple Helm charts concurrently.
 
-## Usage
+## Usage Example
 
 ```hcl
 # install provider

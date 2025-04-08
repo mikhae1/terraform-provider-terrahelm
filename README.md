@@ -2,22 +2,29 @@
 
 **TerraHelm** is a third-party [Terraform](https://www.terraform.io/) provider that simplifies managing [Helm](https://helm.sh/) releases using [Helm CLI](https://helm.sh/docs/helm/).
 
-This provider is designed for teams looking to integrate Helm deployments seamlessly into their Terraform infrastructure, particularly those considering a transition to GitOps in the future. The HashiCorp Helm provider, though robust in managing basic Helm releases, will encounter limitations with complex Helm orchestration tasks due to several key reasons:
+TerraHelm is a Terraform provider designed to seamlessly integrate Helm chart deployments into your Terraform workflows, offering a unified, atomic, and declarative approach to managing both cloud infrastructure and Kubernetes applications. If you've struggled with the limitations of HashiCorp's native Helm provider, TerraHelm provides a modern alternative built for reliability, simplicity, and tight Terraform integration.
+
+While the native Helm provider handles basic deployments, it falls short when you need to orchestrate complex Helm operations:
 - Limited Customization and Configuration Flexibility: The HashiCorp Helm provider primarily focuses on deploying Helm charts from repositories and configuring them using Terraform-defined variables. However, in complex deployments, users often need more nuanced control over the deployment process, such as conditional deployments, complex dependencies between charts, or advanced error handling strategies which can be better handled through direct interaction with the Helm CLI.
 - Restricted Access to Helm CLI Features: The HashiCorp provider encapsulates Helm functionality, exposing only a subset of the Helm CLI’s capabilities through Terraform.
 - Debugging and Troubleshooting: Helm deployments can sometimes fail due to issues such as template rendering errors, chart dependencies, or configuration mismatches. While the HashiCorp Helm provider does provide error logs, troubleshooting complex issues might require deeper insights into the Helm operations, such as step-by-step execution logs or interactive debugging sessions, which are more directly accessible through the Helm CLI itself.
-- Version Management: Complex environments might require specific versions of Helm for different applications or different parts of the same application due to already established GitOps integrations, legacy code, or security requirements.
+- Version Management: Complex environments might require specific versions of Helm for different applications or different parts of the same application due to already established CI/CD integrations, legacy code, or security requirements.
 - Performance Challenges with Large Deployments: The Helm provider can slow down when deploying large charts or multiple Helm charts due to slow Terraform’s state management logic. TerraHelm mitigates this by using the Helm CLI directly, reducing Terraform state bloat and enhancing performance.
-- Integration with External Systems: In complex orchestration tasks, Helm charts might need to interact more extensively with external systems for fetching configuration data or managing secrets, for example. The direct use of Helm CLI allows for custom scripts and hooks that can dynamically interact with these systems during the deployment process, offering a level of customization that the HashiCorp provider might not support natively (see example below).
+- Integration with External Storages: In complex orchestration tasks, Helm charts might need to interact more extensively with external systems for fetching configuration data or managing secrets, for example. TerraHelm allows for custom scripts and hooks that can dynamically interact with these systems during the deployment process, offering a level of customization that the HashiCorp provider won't support natively (see examples below).
 
-TerraHelm fills this gap by directly integrating the Helm CLI into the Terraform environment, boosting both the efficiency and simplicity of managing Helm-related tasks and providing powerful capabilties, like downloads of both charts and values independently from various sources like Git, Mercurial, HTTP, Amazon S3, Google GCP, etc.
-
-## Features
-
-- **Helm CLI Integration**: Seamlessly integrates Helm CLI into Terraform, enabling full access to Helm CLI functionalities for improved debugging and operational flexibility.
-- **Binary Management**: Automatically handles the downloading and installation of the specified Helm binary into a cache_dir directory (`.terraform/terrahelm_cache/` by default). This feature supports effortless version management and switching between different Helm versions.
-- **Flexible Sources**: Supports fetching Helm charts and value files from a variety of sources including Git, Mercurial, HTTP, Amazon S3, and Google Cloud Storage. This flexibility ensures easy integration of custom and third-party Helm charts into your Terraform configuration.
-- **Enhanced Debugging**: Provides the capability to execute Helm CLI commands directly, mirroring the operations performed by the provider. This aids in debugging by allowing users to replicate and diagnose issues within the deployment process.
+TerraHelm is built specifically with these challenges in mind. It will boost both the efficiency and simplicity of managing Helm-related tasks and provide powerful capabilities, like:
+- **Direct Helm CLI Integration:**
+TerraHelm invokes the Helm CLI directly rather than wrapping a subset of Helm’s functionality. This ensures you get the full power of Helm, including advanced commands, nuanced configurations, and extensive debugging information during deployments.
+- **Enhanced Customization & Debugging:**
+With direct helm-cli command logs, troubleshooting becomes more straightforward when something goes wrong.
+- **Efficient Binary Management & Version Control:**
+Automatically manages the downloading and installation of the appropriate Helm binary into a designated cache (`.terraform/terrahelm_cache/`). This enables effortless switching between Helm versions without manual intervention, reducing the risk of version mismatches or Terraform state bloat.
+- **Multiple Chart Sources & Protocols:**
+TerraHelm supports retrieving both Helm charts and value files from a wide array of sources including Git, Mercurial, HTTP, Amazon S3, and Google Cloud Storage.
+- **Customizable Post-Rendering:**
+Seamlessly integrate post-renderers to inject extra configurations or perform manifest transformations before deployment (like secrets rendering).
+- **Improved Performance:**
+By directly executing Helm commands, TerraHelm minimizes the overhead imposed by Terraform state management logic. This leads to faster deployments—especially when managing large-scale or multiple Helm charts concurrently.
 
 ## Documentation
 
@@ -50,20 +57,22 @@ To build and install the `terraform-provider-terrahelm` provider from source, en
 $ make install
 ```
 
-## Usage
-
-TerraHelm manages Helm releases through the `terrahelm_release` resource and data source, representing a Helm release installed on a Kubernetes cluster.
+## Usage Examples
 
 ### Provider configuration
+
+Configure the provider with the desired Helm version and Kubernetes context:
 
 ```hcl
 provider "terrahelm" {
   helm_version = "v3.9.4"
-  kube_context = "kind"
+  kube_context = "your-kube-context"
 }
 ```
 
-### Chart Repository release
+### Deploying Helm Chart from a Repository
+
+Deploy a Helm chart from a standard Helm repository:
 
 ```hcl
 resource "terrahelm_release" "mysql" {
@@ -83,7 +92,7 @@ data "template_file" "values" {
 }
 ```
 
-#### Local chart
+### Deploying a Chart from a folder
 
 ```hcl
 resource "terrahelm_release" "local_chart" {
@@ -93,7 +102,9 @@ resource "terrahelm_release" "local_chart" {
 }
 ```
 
-### Git Repository release
+### Deploying a Chart from a Git Repository
+
+Deploy a chart using a Git repository as source:
 
 ```hcl
 resource "terrahelm_release" "nginx" {
@@ -110,9 +121,22 @@ resource "terrahelm_release" "nginx" {
 }
 ```
 
-### Chart Url release
+### Data Source
 
-The `chart_url` parameter allows fetching charts from various sources, providing much more flexibility compared to `git_repository`.
+You can use the `data "terrahelm_release"` data source to fetch release information from the Kubernetes cluster.
+
+```hcl
+data "terrahelm_release" "nginx" {
+  name      = "nginx"
+  namespace = "nginx"
+}
+```
+
+## Advanced Use Cases
+
+### Flexible Chart Source Handling
+
+The `chart_url` parameter allows fetching charts from various sources, providing much more flexibility compared to `git_repository`:
 
 ```hcl
 resource "terrahelm_release" "nginx" {
@@ -130,13 +154,13 @@ resource "terrahelm_release" "nginx" {
 }
 ```
 
-#### General parameters
+#### Supported Chart URL arguments
 
 - `archive` - The archive format to use to unarchive this file, or "" (empty string) to disable unarchiving
 - `checksum` - Checksum to verify the downloaded file or archive (`./chart.tgz?checksum=md5:12345678`, `./chart.tgz?checksum=file:./chart.tgz.sha256sum`)
 - `filename` - When in file download mode, allows specifying the name of the downloaded file on disk. Has no effect in directory mode.
 
-Here are examples covering different protocols and key features:
+Here are more examples covering different protocols and key features:
 
 #### Local files
 
@@ -163,8 +187,7 @@ resource "terrahelm_release" "git_chart" {
 }
 ```
 
-##### Supported parameters
-
+**Supported chart_url parameters:**
 - `ref` - The Git ref to checkout. This is a ref, so it can point to a commit SHA, a branch name, etc.
 - `sshkey` - An SSH private key to use during clones. The provided key must be a base64-encoded string. For example, to generate a suitable sshkey from a private key file on disk, you would run base64 -w0 <file>.
 - `depth` - The Git clone depth. The provided number specifies the last n revisions to clone from the repository.
@@ -178,7 +201,7 @@ resource "terrahelm_release" "hg_chart" {
 }
 ```
 
-#### HTTP
+#### HTTP(s)
 
 ```hcl
 resource "terrahelm_release" "http_chart" {
@@ -205,8 +228,7 @@ resource "terrahelm_release" "s3_chart" {
 }
 ```
 
-##### Supported parameters
-
+**Supported AWS S3 parameters:**
 - `aws_access_key_id` - AWS access key.
 - `aws_access_key_secret` - AWS access key secret.
 - `aws_access_token` - AWS access token if this is being used.
@@ -231,18 +253,7 @@ resource "terrahelm_release" "gcp_chart" {
 }
 ```
 
-### Data Source
-
-```hcl
-data "terrahelm_release" "nginx" {
-  name      = "nginx"
-  namespace = "nginx"
-}
-```
-
-## Using Values and Values Files
-
-### Overview
+## Flexible Values Handling
 
 When deploying Helm charts with this Terraform provider, you have the flexibility to customize the values passed to the Helm chart using either a values string (`values`) or values files (`values_files`). When both `values` and `values_files` are provided, the values from values take precedence over the values from the files. This means that you can override specific values from files by providing them directly in the values parameter.
 
@@ -272,7 +283,7 @@ resource "helm_release" "example" {
 
 ### Values Files
 
-The `values_files` parameter allows you to specify one or more YAML files containing values for the Helm chart, whether they are local files, URLs, or files relative to the chart repository. This approach offers a powerful way to store values files outside Terraform in a GitOps compatible manner, enabling the use of separate repositories for the chart and value files. Notably, `values_files` supports most of the parameters from `chart_url`, allowing leverage diverse storage solutions for each individual file.
+The `values_files` parameter allows you to specify one or more YAML files containing values for the Helm chart, whether they are local files, URLs, or files relative to the chart repository. This approach offers a powerful way to store values files outside Terraform in a IaC compatible manner, enabling the use of separate repositories for the chart and value files. Notably, `values_files` supports most of the parameters from `chart_url`, allowing leverage diverse storage solutions for each individual file.
 
 ```hcl
 resource "helm_release" "example" {
@@ -287,7 +298,6 @@ resource "helm_release" "example" {
 ```
 
 Values files will be added to Helm CLI in the order of appearance, and the values from the latest files will override the values from the first ones.
-
 
 Files starting with `.` are treated as relative to the chart repository itself:
 
@@ -306,7 +316,7 @@ resource "terrahelm_release" "chart_values_files" {
 
 So the `charts` directory will be downloaded first and `charts/values/nginx/common.yaml`, `charts/values/nginx/dev-values.yaml` will be passed to the Helm CLI.
 
-## Post-Renderer Configuration
+### Post-Renderer Integration
 
 Helm provides support for [post-renderers](https://helm.sh/docs/topics/advanced/#post-rendering), which allow you to modify the Kubernetes manifests generated by Helm before they are deployed to your cluster. This can be useful for tasks such as:
 
@@ -314,7 +324,7 @@ Helm provides support for [post-renderers](https://helm.sh/docs/topics/advanced/
 - Integrating with [kustomize](https://github.com/thomastaylor312/advanced-helm-demos/tree/master/post-render) or any external systems or tools.
 - Performing custom validation or transformation of the manifests.
 
-### Using Post-Renderers
+#### Using Post-Renderers
 
 To configure a post-renderer for a Helm release, you can use the `post_renderer` and `post_renderer_url` arguments in the `terrahelm_release` resource:
 
@@ -330,18 +340,18 @@ resource "terrahelm_release" "example" {
 }
 ```
 
-#### post_renderer
+Where:
 
+**post_renderer**:
 - This argument specifies the command to run as the post-renderer. The command should accept the rendered Kubernetes manifests on standard input and output the modified manifests on standard output.
 - You can also provide additional arguments to the post-renderer command by separating them with spaces.
 
-#### post_renderer_url
-
+**post_renderer_url**:
 - This argument allows you to specify a URL from where the post-renderer script will be downloaded, same features supported  chat.
 - TerraHelm will automatically download the script and make it executable.
 - If you only specify `post_renderer_url` without `post_renderer`, the downloaded script will be used as the post-renderer command.
 
-### Safely using secrets with TerraHelm
+### Safely injecting secrets with TerraHelm
 
 [secfetch](https://github.com/mikhae1/secfetch) allows replace secrets in Helm charts and values using the following placeholder syntax: `{prefix}//{secret-path}//{target-key}`.
 It supports AWS SSM, AWS Secrets Manager, Environment variables and others.
@@ -375,7 +385,7 @@ resource "terrahelm_release" "postrender" {
 
 ## More examples
 
-Refer to the examples [here](./examples).
+Refer to the [examples](./examples) directory for more examples.
 
 ## Troubleshooting
 

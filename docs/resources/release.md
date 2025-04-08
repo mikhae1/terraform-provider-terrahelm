@@ -3,14 +3,16 @@
 page_title: "terrahelm_release Resource - terraform-provider-terrahelm"
 subcategory: ""
 description: |-
-  Helm chart release deployment
+  Helm chart release management
 ---
 
 # terrahelm_release (Resource)
 
-Helm chart release deployment
+Helm chart release management
 
-## Example Usage - Chart Repository release
+## Usage Examples
+
+### Deploying Helm Chart from Helm Repository
 
 ```hcl
 resource "terrahelm_release" "mysql" {
@@ -24,7 +26,7 @@ output "mysql_release_status" {
 }
 ```
 
-## Example Usage - Git Repository release
+### Deploying Helm Chart from Git Repository
 
 ```hcl
 resource "terrahelm_release" "nginx" {
@@ -41,7 +43,7 @@ resource "terrahelm_release" "nginx" {
 }
 ```
 
-#### Local chart
+#### Deploying Helm Chart from the File System
 
 ```hcl
 resource "terrahelm_release" "local_chart" {
@@ -51,18 +53,20 @@ resource "terrahelm_release" "local_chart" {
 }
 ```
 
-## Example Usage - Chart Url release
+## Advanced Use Cases
+
+### Deploying Helm Chart from Remote Sources using chart_url
 
 ```hcl
+# Local chart
 resource "terrahelm_release" "local_chart" {
   name      = "local-chart"
   chart_url = "file::path/to/local/chart.tgz"
 }
 ```
 
-#### Git
-
 ```hcl
+# Remote chart using https
 resource "terrahelm_release" "git_chart" {
   name      = "git-chart"
   chart_url = "github.com/kubernetes/ingress-nginx//charts/ingress-nginx?ref=helm-chart-4.8.3&depth=1"
@@ -70,14 +74,14 @@ resource "terrahelm_release" "git_chart" {
 ```
 
 ```hcl
+# Remote chart using git client
 resource "terrahelm_release" "git_chart" {
   name      = "git-chart"
   chart_url = "git::git@github.com:bitnami/charts.git//bitnami/nginx?depth=1"
 }
 ```
 
-##### Supported parameters
-
+**Supported chart_url parameters:**
 - `ref` - The Git ref to checkout. This is a ref, so it can point to a commit SHA, a branch name, etc.
 - `sshkey` - An SSH private key to use during clones. The provided key must be a base64-encoded string. For example, to generate a suitable sshkey from a private key file on disk, you would run base64 -w0 <file>.
 - `depth` - The Git clone depth. The provided number specifies the last n revisions to clone from the repository.
@@ -91,7 +95,7 @@ resource "terrahelm_release" "hg_chart" {
 }
 ```
 
-#### HTTP
+#### HTTP(s)
 
 ```hcl
 resource "terrahelm_release" "http_chart" {
@@ -118,8 +122,7 @@ resource "terrahelm_release" "s3_chart" {
 }
 ```
 
-##### Supported parameters
-
+**Supported AWS S3 parameters:**
 - `aws_access_key_id` - AWS access key.
 - `aws_access_key_secret` - AWS access key secret.
 - `aws_access_token` - AWS access token if this is being used.
@@ -144,7 +147,9 @@ resource "terrahelm_release" "gcp_chart" {
 }
 ```
 
-## Example Usage - Values Files
+## Flexible Values Handling
+
+TerraHelm provides a flexible way to handle values files, allowing you to specify values files from various sources, such as local files, URLs, or files relative to the chart repository. This approach offers a powerful way to store values files outside Terraform in a IaC compatible manner, enabling the use of separate repositories for the chart and value files. Notably, `values_files` supports most of the parameters from `chart_url`, allowing leverage diverse storage solutions for each individual file.
 
 ```hcl
 resource "terrahelm_release" "nginx" {
@@ -168,7 +173,7 @@ resource "terrahelm_release" "nginx" {
 }
 ```
 
-## Example Usage - Safely Inject Secrets with Post Renderer
+## Safely Inject Secrets with Post Renderer
 
 ```hcl
 resource "terrahelm_release" "postrender" {
@@ -182,8 +187,8 @@ resource "terrahelm_release" "postrender" {
   values = <<EOF
   basicAuth:
     enabled: true
-    username: "ssm://path/to/username"    # -> get /path/to/username from AWS SSM
-    password: "ssm://path/to/password"    # -> get /path/to/password from AWS SSM
+    username: "ssm://path/to/username"    # -> get /path/to/username from AWS SSM and replace the URL
+    password: "ssm://path/to/password"    # -> get /path/to/password from AWS SSM and replace the URL
   EOF
 }
 ```
@@ -208,9 +213,11 @@ resource "terrahelm_release" "postrender" {
 - `git_reference` (String) Reference (e.g. branch, tag, commit hash) to checkout in the Git repository
 - `git_repository` (String) URL of the git repository containing the Helm chart, git cli is used for downloading)
 - `insecure` (Boolean) Disable checking certificates (not safe)
+- `max_retries` (Integer) The maximum number of retry attempts for downloading remote resources (default is 0, no retries)
 - `namespace` (String) The Kubernetes namespace where the Helm chart will be installed
 - `post_renderer` (String) Post-renderer command to run
 - `post_renderer_url` (String) URL of the post-renderer script to download and use
+- `retry_delay` (String) The delay between retry attempts for downloading remote resources (default is 0s)
 - `timeout` (String) The maximum time to wait for the Helm chart installation to complete
 - `values` (String) A YAML string representing the values to be passed to the Helm chart
 - `values_files` (List of String) A list of the values file names or URLs to be passed to the Helm chart

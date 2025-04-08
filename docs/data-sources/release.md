@@ -8,9 +8,9 @@ description: |-
 
 # terrahelm_release (Data Source)
 
-Read Helm chart data
+Read Helm release information from the Kubernetes cluster.
 
-## Example Usage
+## Usage Example
 
 ```hcl
 data "terrahelm_release" "nginx" {
@@ -19,7 +19,7 @@ data "terrahelm_release" "nginx" {
 }
 
 output "nginx_release_status" {
-  value = value = data.terrahelm_release.nginx.release_status
+  value = data.terrahelm_release.nginx.release_status
 }
 ```
 
