@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"crypto/md5"
 
@@ -58,6 +59,18 @@ func resourceHelmRelease() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				ForceNew:    true,
+			},
+			"max_retries": {
+				Description: "The maximum number of retry attempts for downloading remote resources (default is 0, no retries).",
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Default:     0,
+			},
+			"retry_delay": {
+				Description: "The fixed delay duration between retry attempts for downloading remote resources (e.g., '2s').",
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "2s",
 			},
 			"git_reference": {
 				Description: "Reference (e.g. branch, tag, commit hash) to checkout in the Git repository",
@@ -343,6 +356,13 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	customArgs := d.Get("custom_args").([]interface{})
 	postRenderer := d.Get("post_renderer").(string)
 	postRendererURL := d.Get("post_renderer_url").(string)
+	maxRetries := d.Get("max_retries").(int)
+	retryDelayStr := d.Get("retry_delay").(string)
+
+	retryDelay, err := time.ParseDuration(retryDelayStr)
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("invalid retry_delay: %w", err))
+	}
 
 	// Retrieve provider config
 	config := m.(*ProviderConfig)
@@ -387,7 +407,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 			}
 		}
 
-		// Download chart from URL if specified
+		// Download chart from URL if specified with retry mechanism
 		if chartURL != "" {
 			client := &getter.Client{
 				Src:      chartURL,
@@ -397,8 +417,18 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 			}
 
 			tflog.Info(ctx, fmt.Sprintf("Chart URL downloading: '%s' to '%s'...", chartURL, repoPath))
-			if err := client.Get(); err != nil {
-				return diag.FromErr(fmt.Errorf("failed to fetch the repository: %s\nError: %s", gitRepository, err))
+
+			var getErr error
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				getErr = client.Get()
+				if getErr == nil {
+					break
+				}
+				tflog.Warn(ctx, fmt.Sprintf("Download attempt %d failed: %v. Retrying in %s...", attempt, getErr, retryDelay))
+				time.Sleep(retryDelay)
+			}
+			if getErr != nil {
+				return diag.FromErr(fmt.Errorf("failed to fetch the repository after retries: %v", getErr))
 			}
 		}
 
@@ -451,8 +481,18 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 				}
 
 				tflog.Info(ctx, fmt.Sprintf("Value File downloading: '%s' to '%s'...", vf, vDst))
-				if err := client.Get(); err != nil {
-					return diag.FromErr(fmt.Errorf("failed to fetch the repository: %s\nError: %s", gitRepository, err))
+
+				var getErr error
+				for attempt := 0; attempt <= maxRetries; attempt++ {
+					getErr = client.Get()
+					if getErr == nil {
+						break
+					}
+					tflog.Warn(ctx, fmt.Sprintf("Value file download attempt %d failed: %v. Retrying in %s...", attempt+1, getErr, retryDelay))
+					time.Sleep(retryDelay)
+				}
+				if getErr != nil {
+					return diag.FromErr(fmt.Errorf("failed to fetch value file after retries: %v", getErr))
 				}
 				vfPaths = append(vfPaths, vDst)
 			}
@@ -514,10 +554,6 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	renderPath := ""
 	if postRendererURL != "" {
 		renderPath = filepath.Join(config.CacheDir, "postrender", generateHash(postRendererURL), "postrender")
-
-		// if err := os.MkdirAll(filepath.Dir(renderPath), os.ModePerm); err != nil {
-		// 	return diag.FromErr(fmt.Errorf("failed to create directory for post-renderer script: %w", err))
-		// }
 
 		getMode := getter.ClientModeAny
 		getDst := renderPath

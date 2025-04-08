@@ -104,6 +104,7 @@ resource "terrahelm_release" "chart_values_files" {
   namespace        = "nginx-values"
   create_namespace = true
   timeout          = 60
+  max_retries      = 3
   atomic           = true
 
   values_files = [
