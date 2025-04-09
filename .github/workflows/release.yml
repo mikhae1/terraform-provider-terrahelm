@@ -32,7 +32,7 @@ jobs:
 
   terraform-provider-release:
     name: Terraform Provider Release
-    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/community.yml@v2
+    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/community.yml@v4
     needs: tests
     secrets:
       gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
