@@ -7,8 +7,31 @@ terraform {
 }
 
 provider "terrahelm" {
-  helm_version = "v3.9.1"
+  helm_version = "v4.1.0"
   kube_context = "rancher-desktop"
+
+  # kube_exec {
+  #   api_version = "client.authentication.k8s.io/v1beta1"
+  #   command     = "aws"
+  #   args        = ["eks", "get-token", "--cluster-name", "rancher-desktop"]
+  #   timeout_seconds = 30
+  # }
+
+  # Azure AKS example:
+  # kube_exec {
+  #   command = "az"
+  #   args = [
+  #     "account", "get-access-token",
+  #     "--resource", "6dae42f8-4368-4678-94ff-3960e28e3630",
+  #     "--output", "json",
+  #   ]
+  # }
+
+  # Google GKE example:
+  # kube_exec {
+  #   command = "gcloud"
+  #   args    = ["auth", "print-access-token"]
+  # }
 }
 
 #
@@ -35,7 +58,7 @@ resource "terrahelm_release" "git_repository" {
 #
 resource "terrahelm_release" "chart_url_http" {
   name             = "traefik"
-  chart_url        = "https://traefik.github.io/charts/traefik/traefik-26.1.0.tgz//traefik"
+  chart_url        = "https://traefik.github.io/charts/traefik/traefik-39.0.0.tgz//traefik"
   namespace        = "traefik"
   create_namespace = true
   timeout          = 60
@@ -44,13 +67,12 @@ resource "terrahelm_release" "chart_url_http" {
 
 resource "terrahelm_release" "chart_url" {
   name             = "nginx"
-  chart_url        = "github.com/kubernetes/ingress-nginx//charts/ingress-nginx?ref=helm-chart-4.8.3&depth=1"
+  chart_url        = "github.com/kubernetes/ingress-nginx//charts/ingress-nginx?ref=helm-chart-4.14.3&depth=1"
   namespace        = "nginx"
   create_namespace = true
   timeout          = 60
   atomic           = true
 }
-
 
 output "release_status" {
   value = terrahelm_release.git_repository.release_status

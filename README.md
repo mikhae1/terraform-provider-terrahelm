@@ -70,6 +70,59 @@ provider "terrahelm" {
 }
 ```
 
+### Exec-based authentication (EKS, AKS, GKE)
+
+Use `kube_exec` to retrieve short-lived Kubernetes tokens without writing kubeconfig credentials.
+
+`kube_exec` supports:
+- plain token output (raw stdout)
+- ExecCredential JSON (`status.token`)
+- cloud CLI token JSON (`accessToken`, `access_token`, `token`, `idToken`, `id_token`)
+
+The command timeout defaults to `30` seconds and can be changed with `timeout_seconds`.
+
+#### AWS EKS (`aws eks get-token`)
+
+```hcl
+provider "terrahelm" {
+  kube_apiserver = module.eks[0].cluster_endpoint
+  kube_ca_file   = "${path.module}/cluster-ca.crt"
+
+  kube_exec {
+    api_version     = "client.authentication.k8s.io/v1beta1"
+    command         = "aws"
+    args            = ["eks", "get-token", "--cluster-name", module.eks[0].cluster_name]
+    timeout_seconds = 30
+  }
+}
+```
+
+#### Azure AKS (`az account get-access-token`)
+
+```hcl
+provider "terrahelm" {
+  kube_exec {
+    command = "az"
+    args = [
+      "account", "get-access-token",
+      "--resource", "6dae42f8-4368-4678-94ff-3960e28e3630",
+      "--output", "json",
+    ]
+  }
+}
+```
+
+#### Google GKE (`gcloud auth print-access-token`)
+
+```hcl
+provider "terrahelm" {
+  kube_exec {
+    command = "gcloud"
+    args    = ["auth", "print-access-token"]
+  }
+}
+```
+
 ### Deploying Helm Chart from a Repository
 
 Deploy a Helm chart from a standard Helm repository:

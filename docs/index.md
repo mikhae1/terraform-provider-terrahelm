@@ -82,7 +82,21 @@ data "terrahelm_release" "nginx" {
 - `kube_as_user` (String) Username to impersonate for the operation
 - `kube_ca_file` (String) Certificate authority file for the Kubernetes API server connection
 - `kube_context` (String) Name of the kubeconfig context to use
+- `kube_exec` (Block List, Max: 1) Exec-based authentication configuration (e.g., EKS, AKS, GKE) (see [below for nested schema](#nestedblock--kube_exec))
 - `kube_insecure_skip_tls_verify` (Boolean) If true, the Kubernetes API server's certificate will not be checked for validity. This will make your HTTPS connections insecure
 - `kube_tls_server_name` (String) Server name to use for Kubernetes API server certificate validation. If it is not provided, the hostname used to contact the server is used
 - `kube_token` (String, Sensitive) Bearer token used for authentication
 - `kubeconfig` (String) Path to the kubeconfig file
+
+### Nested Schema for `kube_exec`
+
+Required:
+
+- `command` (String) Command to execute for retrieving the Kubernetes token
+
+Optional:
+
+- `api_version` (String) ExecCredential API version passed via KUBERNETES_EXEC_INFO
+- `args` (List of String) Arguments to pass to the exec command
+- `env` (Map of String) Environment variables to pass to the exec command
+- `timeout_seconds` (Number) Maximum number of seconds to wait for the exec command before failing

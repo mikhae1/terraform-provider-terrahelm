@@ -12,9 +12,9 @@ import (
 // MockProviderConfig returns a mock ProviderConfig for testing
 func MockProviderConfig() *ProviderConfig {
 	return &ProviderConfig{
-		CacheDir: os.TempDir(),
+		CacheDir:   os.TempDir(),
 		GitBinPath: "echo", // override real git command
-		HelmCmd: func(args ...string) *exec.Cmd {
+		HelmCmd: func(_ context.Context, args ...string) (*exec.Cmd, error) {
 			output := ""
 			switch cmd := args[0]; cmd {
 			case "list":
@@ -24,7 +24,7 @@ func MockProviderConfig() *ProviderConfig {
 			default:
 				output = "unknown: " + cmd
 			}
-			return exec.Command("echo", output)
+			return exec.Command("echo", output), nil
 		},
 	}
 }

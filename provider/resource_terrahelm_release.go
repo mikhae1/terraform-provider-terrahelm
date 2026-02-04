@@ -242,7 +242,10 @@ func resourceHelmReleaseDelete(ctx context.Context, d *schema.ResourceData, m in
 	namespace := d.Get("namespace").(string)
 
 	config := m.(*ProviderConfig)
-	cmd := config.HelmCmd("uninstall", name, "--namespace", namespace)
+	cmd, err := config.HelmCmd(ctx, "uninstall", name, "--namespace", namespace)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to uninstall Helm release: %v, Output: %s", err, output))
@@ -261,7 +264,10 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	config := m.(*ProviderConfig)
 
 	tflog.Debug(ctx, "getting the Helm chart information")
-	listCmd := config.HelmCmd("list", "-n", namespace, "-f", name, "-o", "json")
+	listCmd, err := config.HelmCmd(ctx, "list", "-n", namespace, "-f", name, "-o", "json")
+	if err != nil {
+		return diag.FromErr(err)
+	}
 	output, err := listCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm chart information: %s", err))
@@ -298,7 +304,10 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	d.Set("release_status", helmChart.Status)
 
 	tflog.Debug(ctx, "getting user Helm values")
-	userValuesCmd := config.HelmCmd("get", "values", "-n", namespace, name, "-o", "yaml")
+	userValuesCmd, err := config.HelmCmd(ctx, "get", "values", "-n", namespace, name, "-o", "yaml")
+	if err != nil {
+		return diag.FromErr(err)
+	}
 	userValuesOutput, err := userValuesCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm values: %s", err))
@@ -311,7 +320,10 @@ func resourceHelmReleaseRead(ctx context.Context, d *schema.ResourceData, m inte
 	d.Set("values", safeVal)
 
 	tflog.Debug(ctx, "getting release Helm values")
-	valuesCmd := config.HelmCmd("get", "values", "-n", namespace, name, "-a", "-o", "json")
+	valuesCmd, err := config.HelmCmd(ctx, "get", "values", "-n", namespace, name, "-a", "-o", "json")
+	if err != nil {
+		return diag.FromErr(err)
+	}
 	valuesOutput, err := valuesCmd.Output()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to retrieve Helm release values: %s", err))
@@ -364,6 +376,12 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		return diag.FromErr(fmt.Errorf("invalid retry_delay: %w", err))
 	}
 
+	chartURLHasSubdir := false
+	if chartURL != "" {
+		_, subDir := getter.SourceDirSubdir(chartURL)
+		chartURLHasSubdir = subDir != ""
+	}
+
 	// Retrieve provider config
 	config := m.(*ProviderConfig)
 	cacheDir := config.CacheDir
@@ -409,22 +427,26 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 
 		// Download chart from URL if specified with retry mechanism
 		if chartURL != "" {
+			getMode := getter.ClientModeAny
+			if chartPath != "" || chartURLHasSubdir {
+				getMode = getter.ClientModeDir
+			}
 			client := &getter.Client{
 				Src:      chartURL,
 				Dst:      repoPath,
 				Insecure: insecure,
-				Mode:     getter.ClientModeAny,
+				Mode:     getMode,
 			}
 
 			tflog.Info(ctx, fmt.Sprintf("Chart URL downloading: '%s' to '%s'...", chartURL, repoPath))
 
 			var getErr error
-			for attempt := 1; attempt <= maxRetries; attempt++ {
+			for attempt := 0; attempt <= maxRetries; attempt++ {
 				getErr = client.Get()
 				if getErr == nil {
 					break
 				}
-				tflog.Warn(ctx, fmt.Sprintf("Download attempt %d failed: %v. Retrying in %s...", attempt, getErr, retryDelay))
+				tflog.Warn(ctx, fmt.Sprintf("Download attempt %d failed: %v. Retrying in %s...", attempt+1, getErr, retryDelay))
 				time.Sleep(retryDelay)
 			}
 			if getErr != nil {
@@ -433,7 +455,10 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		}
 
 		// Build Helm dependency
-		depCmd := config.HelmCmd("dependency", "build", fullChartPath)
+		depCmd, err := config.HelmCmd(ctx, "dependency", "build", fullChartPath)
+		if err != nil {
+			return diag.FromErr(err)
+		}
 		var helmDepStderr bytes.Buffer
 		depCmd.Stderr = &helmDepStderr
 		tflog.Debug(ctx, fmt.Sprintf("Building Helm dependency: '%s'...", fullChartPath))
@@ -447,7 +472,10 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	if isUpdate {
 		cmd = "upgrade"
 	}
-	helmCmd := config.HelmCmd(cmd, name, fullChartPath)
+	helmCmd, err := config.HelmCmd(ctx, cmd, name, fullChartPath)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	// Prepare values
 	valuesPath := filepath.Join(cacheDir, "values", name)
