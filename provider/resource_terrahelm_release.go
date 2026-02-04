@@ -675,7 +675,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 			errMsg += fmt.Sprintf("\nHelm stdout: %s", helmCmdStdout.String())
 			errMsg += fmt.Sprintf("\nHelm stderr: %s", helmCmdStderr.String())
 		}
-		return diag.FromErr(fmt.Errorf(errMsg))
+		return diag.FromErr(fmt.Errorf("%s", errMsg))
 	}
 
 	// Set the ID for the resource

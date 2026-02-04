@@ -1,3 +1,42 @@
+# v1.4.0
+
+### New Features
+
+- Add Helm 4 post-renderer support by generating a subprocess plugin in the TerraHelm cache
+- Add exec-based Kubernetes authentication support
+- Scope Helm cache/config/data/plugin directories to the TerraHelm cache
+- Update Go version and dependencies and apply security fixes
+- Add exec-based Kubernetes authentication support in provider configuration
+
+### Bug Fixes
+
+- Fix chart repository URL handling by using `--repo` for HTTP(S) repositories
+- Fix download retry loop to run at least once when retries are disabled
+
+# v1.3.3
+
+### New Features
+
+- Update goreleaser configuration to version 2
+
+# v1.3.2
+
+### New Features
+
+- Update Terraform provider release action to version 4
+
+# v1.3.1
+
+### New Features
+
+- Update go-getter to v1.7.8
+
+# v1.3.0
+
+### New Features
+
+- Add max_retries and retry_delay options for remote downloads
+
 # v1.2.2
 
 ### New Features
