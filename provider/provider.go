@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type ProviderConfig struct {
 	HelmBinPath string
 	GitBinPath  string
 	HelmVersion string
+	HelmMajor   int
 	CacheDir    string
 	KubeAuth    KubeAuth
 	HelmCmd     func(ctx context.Context, args ...string) (*exec.Cmd, error)
@@ -235,6 +237,19 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 		return nil, diag.Errorf("failed to create cache directory (try to use 'cache_dir' arg): %v", err)
 	}
 
+	helmCacheBase := filepath.Join(cacheDir, "helm")
+	helmCacheDirs := []string{
+		filepath.Join(helmCacheBase, "cache"),
+		filepath.Join(helmCacheBase, "config"),
+		filepath.Join(helmCacheBase, "data"),
+		filepath.Join(helmCacheBase, "plugins"),
+	}
+	for _, dir := range helmCacheDirs {
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			return nil, diag.Errorf("failed to create helm cache directory: %v", err)
+		}
+	}
+
 	if helmBinPath == "" {
 		var err error
 		if helmBinPath, err = installHelmCLI(helmVersion, cacheDir); err != nil {
@@ -259,6 +274,12 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 
 	helmCmdFunc := func(callCtx context.Context, args ...string) (*exec.Cmd, error) {
 		helmCmd := exec.Command(helmBinPath, args...)
+		helmCmd.Env = append(os.Environ(),
+			"HELM_CACHE_HOME="+filepath.Join(helmCacheBase, "cache"),
+			"HELM_CONFIG_HOME="+filepath.Join(helmCacheBase, "config"),
+			"HELM_DATA_HOME="+filepath.Join(helmCacheBase, "data"),
+			"HELM_PLUGINS="+filepath.Join(helmCacheBase, "plugins"),
+		)
 
 		if kubeAuth.KubeAPIServer != "" {
 			helmCmd.Args = append(helmCmd.Args, "--kube-apiserver", kubeAuth.KubeAPIServer)
@@ -302,10 +323,27 @@ func configureProvider(ctx context.Context, d *schema.ResourceData) (interface{}
 		HelmBinPath: helmBinPath,
 		GitBinPath:  gitGitBinPath,
 		HelmVersion: helmVersion,
+		HelmMajor:   helmMajorFromVersion(helmVersion),
 		CacheDir:    cacheDir,
 		KubeAuth:    kubeAuth,
 		HelmCmd:     helmCmdFunc,
 	}, nil
+}
+
+func helmMajorFromVersion(version string) int {
+	clean := strings.TrimSpace(strings.TrimPrefix(version, "v"))
+	if clean == "" || clean == "latest" {
+		return 0
+	}
+	parts := strings.Split(clean, ".")
+	if len(parts) == 0 {
+		return 0
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0
+	}
+	return major
 }
 
 func resolveKubeToken(ctx context.Context, kubeAuth KubeAuth) (string, error) {

@@ -9,7 +9,7 @@ terraform {
 }
 
 provider "terrahelm" {
-  helm_version = "v3.9.4"
+  helm_version = "v4.1.0"
   kube_context = "kind"
 }
 

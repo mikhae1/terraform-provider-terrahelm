@@ -7,7 +7,7 @@ terraform {
 }
 
 provider "terrahelm" {
-  helm_version = "v4.1.0"
+  helm_version = "v3.20.0"
   kube_context = "rancher-desktop"
 
   # kube_exec {
@@ -17,15 +17,6 @@ provider "terrahelm" {
   #   timeout_seconds = 30
   # }
 
-  # Azure AKS example:
-  # kube_exec {
-  #   command = "az"
-  #   args = [
-  #     "account", "get-access-token",
-  #     "--resource", "6dae42f8-4368-4678-94ff-3960e28e3630",
-  #     "--output", "json",
-  #   ]
-  # }
 
   # Google GKE example:
   # kube_exec {
@@ -95,25 +86,25 @@ output "data_nginx" {
 # chart_repository
 #
 resource "terrahelm_release" "chart_repository" {
-  name             = "fluentd"
-  chart_repository = "bitnami"
-  chart_path       = "fluentd"
-  namespace        = "fluentd"
+  name             = "fluent-bit"
+  chart_repository = "https://fluent.github.io/helm-charts"
+  chart_path       = "fluent-bit"
+  namespace        = "fluent-bit"
   create_namespace = true
   debug            = true
 }
 
-data "terrahelm_release" "fluentd" {
-  name      = "fluentd"
-  namespace = "fluentd"
+data "terrahelm_release" "fluent" {
+  name      = "fluent-bit"
+  namespace = "fluent-bit"
 
   depends_on = [
     terrahelm_release.chart_repository
   ]
 }
 
-output "data_fluentd" {
-  value = data.terrahelm_release.fluentd
+output "helm_data_example" {
+  value = data.terrahelm_release.fluent
 }
 
 #

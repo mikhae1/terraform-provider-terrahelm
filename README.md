@@ -65,7 +65,7 @@ Configure the provider with the desired Helm version and Kubernetes context:
 
 ```hcl
 provider "terrahelm" {
-  helm_version = "v3.9.4"
+  helm_version = "v4.1.0"
   kube_context = "your-kube-context"
 }
 ```
@@ -128,10 +128,11 @@ provider "terrahelm" {
 Deploy a Helm chart from a standard Helm repository:
 
 ```hcl
-resource "terrahelm_release" "mysql" {
-  name             = "mysql"
-  chart_repository = "bitnami"
-  chart_path       = "mysql"
+resource "terrahelm_release" "fluent" {
+  name             = "fluent-bit"
+  chart_repository = "https://fluent.github.io/helm-charts"
+  chart_path       = "fluent-bit"
+  namespace        = "fluent-bit"
 
   values = data.template_file.values.rendered
 }
@@ -154,6 +155,8 @@ resource "terrahelm_release" "local_chart" {
   chart_path       = "my-chart"
 }
 ```
+
+When `chart_repository` is an HTTP(S) URL, TerraHelm passes it to Helm using `--repo` and uses `chart_path` as the chart name.
 
 ### Deploying a Chart from a Git Repository
 
@@ -403,6 +406,8 @@ Where:
 - This argument allows you to specify a URL from where the post-renderer script will be downloaded, same features supported  chat.
 - TerraHelm will automatically download the script and make it executable.
 - If you only specify `post_renderer_url` without `post_renderer`, the downloaded script will be used as the post-renderer command.
+
+When using Helm 4, TerraHelm wraps the resolved post-renderer command into a temporary postrenderer plugin stored in the TerraHelm cache directory and sets `HELM_PLUGINS` to that cache path so Helm can discover it.
 
 ### Safely injecting secrets with TerraHelm
 

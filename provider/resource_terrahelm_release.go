@@ -385,8 +385,25 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	// Retrieve provider config
 	config := m.(*ProviderConfig)
 	cacheDir := config.CacheDir
+	helmMajor := config.HelmMajor
 
 	fullChartPath := filepath.Join(chartRepository, chartPath)
+	chartRepoURL := ""
+	if chartRepository != "" {
+		switch {
+		case isRemoteChartRepoURL(chartRepository):
+			chartRepoURL = chartRepository
+			if chartPath != "" {
+				fullChartPath = chartPath
+			} else {
+				fullChartPath = chartRepository
+			}
+		case isLocalChartRepoPath(chartRepository):
+			fullChartPath = filepath.Join(chartRepository, chartPath)
+		default:
+			fullChartPath = path.Join(chartRepository, chartPath)
+		}
+	}
 	repoPath := ""
 
 	if chartRepository == "" {
@@ -475,6 +492,9 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 	helmCmd, err := config.HelmCmd(ctx, cmd, name, fullChartPath)
 	if err != nil {
 		return diag.FromErr(err)
+	}
+	if chartRepoURL != "" {
+		helmCmd.Args = append(helmCmd.Args, "--repo", chartRepoURL)
 	}
 
 	// Prepare values
@@ -585,7 +605,7 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 
 		getMode := getter.ClientModeAny
 		getDst := renderPath
-		defaultPostRenderer := "renderer" // TODO: add the .exe for windows
+		defaultPostRenderer := "renderer"
 		if postRenderer == "" {
 			getMode = getter.ClientModeFile
 			getDst = filepath.Join(renderPath, defaultPostRenderer)
@@ -610,14 +630,30 @@ func resourceHelmReleaseCreateOrUpdate(ctx context.Context, d *schema.ResourceDa
 		}
 	}
 
-	// Append post-renderer arguments
 	if postRenderer != "" {
 		postRendererArgs := strings.Split(postRenderer, " ")
+		postRendererCmd := ""
+		postRendererCmdArgs := []string{}
 		if len(postRendererArgs) > 0 {
-			helmCmd.Args = append(helmCmd.Args, "--post-renderer", postRendererArgs[0])
+			postRendererCmd = postRendererArgs[0]
 			if len(postRendererArgs) > 1 {
-				helmCmd.Args = append(helmCmd.Args, "--post-renderer-args")
-				helmCmd.Args = append(helmCmd.Args, postRendererArgs[1:]...)
+				postRendererCmdArgs = postRendererArgs[1:]
+			}
+		}
+
+		if postRendererCmd != "" {
+			if helmMajor >= 4 {
+				pluginName, err := ensurePostRendererPlugin(config.CacheDir, postRendererCmd, postRendererCmdArgs, postRendererURL)
+				if err != nil {
+					return diag.FromErr(err)
+				}
+				helmCmd.Args = append(helmCmd.Args, "--post-renderer", pluginName)
+			} else {
+				helmCmd.Args = append(helmCmd.Args, "--post-renderer", postRendererCmd)
+				if len(postRendererCmdArgs) > 0 {
+					helmCmd.Args = append(helmCmd.Args, "--post-renderer-args")
+					helmCmd.Args = append(helmCmd.Args, postRendererCmdArgs...)
+				}
 			}
 		}
 	}
@@ -710,4 +746,73 @@ func generateHash(input string) string {
 	}
 
 	return hashStr
+}
+
+func isRemoteChartRepoURL(chartRepository string) bool {
+	return strings.HasPrefix(chartRepository, "http://") || strings.HasPrefix(chartRepository, "https://")
+}
+
+func isLocalChartRepoPath(chartRepository string) bool {
+	if filepath.IsAbs(chartRepository) {
+		return true
+	}
+	return strings.HasPrefix(chartRepository, ".")
+}
+
+type postRendererPlugin struct {
+	APIVersion    string                    `yaml:"apiVersion"`
+	Type          string                    `yaml:"type"`
+	Name          string                    `yaml:"name"`
+	Version       string                    `yaml:"version"`
+	Runtime       string                    `yaml:"runtime"`
+	RuntimeConfig postRendererRuntimeConfig `yaml:"runtimeConfig"`
+}
+
+type postRendererRuntimeConfig struct {
+	PlatformCommand []postRendererCommand `yaml:"platformCommand"`
+}
+
+type postRendererCommand struct {
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args,omitempty"`
+}
+
+func ensurePostRendererPlugin(cacheDir string, command string, args []string, postRendererURL string) (string, error) {
+	if command == "" {
+		return "", fmt.Errorf("post-renderer command is empty")
+	}
+
+	hashInput := command + "\x00" + strings.Join(args, "\x00") + "\x00" + postRendererURL
+	pluginName := "terrahelm-postrender-" + generateHash(hashInput)
+	pluginDir := filepath.Join(cacheDir, "helm", "plugins", pluginName)
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create post-renderer plugin directory: %w", err)
+	}
+
+	pluginPath := filepath.Join(pluginDir, "plugin.yaml")
+	plugin := postRendererPlugin{
+		APIVersion: "v1",
+		Type:       "postrenderer/v1",
+		Name:       pluginName,
+		Version:    "0.1.0",
+		Runtime:    "subprocess",
+		RuntimeConfig: postRendererRuntimeConfig{
+			PlatformCommand: []postRendererCommand{
+				{
+					Command: command,
+					Args:    args,
+				},
+			},
+		},
+	}
+
+	pluginYaml, err := yaml.Marshal(plugin)
+	if err != nil {
+		return "", fmt.Errorf("failed to build post-renderer plugin.yaml: %w", err)
+	}
+	if err := os.WriteFile(pluginPath, pluginYaml, 0644); err != nil {
+		return "", fmt.Errorf("failed to write post-renderer plugin.yaml: %w", err)
+	}
+
+	return pluginName, nil
 }
