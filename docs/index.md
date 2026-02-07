@@ -34,7 +34,7 @@ terraform {
 # setup provider
 provider "terrahelm" {
   # install given helm cli version locally into `cache_dir`
-  helm_version = "v3.9.4"
+  helm_version = "v4.1.0"
   kube_context = "kind"
 }
 
@@ -82,7 +82,7 @@ data "terrahelm_release" "nginx" {
 - `kube_as_user` (String) Username to impersonate for the operation
 - `kube_ca_file` (String) Certificate authority file for the Kubernetes API server connection
 - `kube_context` (String) Name of the kubeconfig context to use
-- `kube_exec` (Block List, Max: 1) Exec-based authentication configuration (e.g., EKS, AKS, GKE) (see [below for nested schema](#nestedblock--kube_exec))
+- `kube_exec` (Block List, Max: 1) Exec-based authentication configuration for retrieving short-lived Kubernetes tokens without writing kubeconfig credentials. Supports plain token output, ExecCredential JSON (`status.token`), and cloud CLI token JSON (`accessToken`, `access_token`, `token`, `idToken`, `id_token`). Commonly used with managed Kubernetes services like EKS, AKS, and GKE. (see [below for nested schema](#nestedblock--kube_exec))
 - `kube_insecure_skip_tls_verify` (Boolean) If true, the Kubernetes API server's certificate will not be checked for validity. This will make your HTTPS connections insecure
 - `kube_tls_server_name` (String) Server name to use for Kubernetes API server certificate validation. If it is not provided, the hostname used to contact the server is used
 - `kube_token` (String, Sensitive) Bearer token used for authentication
@@ -90,13 +90,85 @@ data "terrahelm_release" "nginx" {
 
 ### Nested Schema for `kube_exec`
 
-Required:
+The `kube_exec` block configures exec-based authentication by executing an external command to retrieve a Kubernetes authentication token. This is useful for managed Kubernetes services that provide CLI tools for token generation.
 
-- `command` (String) Command to execute for retrieving the Kubernetes token
+**Token Output Formats:**
 
-Optional:
+The provider supports multiple token output formats:
+- **Plain token**: Raw stdout output containing the token directly
+- **ExecCredential JSON**: Kubernetes ExecCredential format with token in `status.token` field
+- **Cloud CLI JSON**: Cloud provider CLI output with token in fields like `accessToken`, `access_token`, `token`, `idToken`, or `id_token`
 
-- `api_version` (String) ExecCredential API version passed via KUBERNETES_EXEC_INFO
-- `args` (List of String) Arguments to pass to the exec command
-- `env` (Map of String) Environment variables to pass to the exec command
-- `timeout_seconds` (Number) Maximum number of seconds to wait for the exec command before failing
+**Required:**
+
+- `command` (String) Command to execute for retrieving the Kubernetes token. Must be the path to an executable binary (e.g., `aws`, `az`, `gcloud`).
+
+**Optional:**
+
+- `api_version` (String) ExecCredential API version passed via `KUBERNETES_EXEC_INFO` environment variable. Used when the command expects Kubernetes ExecCredential format. Common values: `client.authentication.k8s.io/v1beta1`, `client.authentication.k8s.io/v1`.
+
+- `args` (List of String) Arguments to pass to the exec command. Each element is a separate argument.
+
+- `env` (Map of String) Environment variables to pass to the exec command. Merged with existing environment variables.
+
+- `timeout_seconds` (Number) Maximum number of seconds to wait for the exec command before failing. Defaults to `30` seconds.
+
+**Example Usage:**
+
+#### AWS EKS
+
+```hcl
+provider "terrahelm" {
+  kube_apiserver = "https://your-eks-cluster.us-west-2.eks.amazonaws.com"
+  kube_ca_file   = "${path.module}/cluster-ca.crt"
+
+  kube_exec {
+    api_version     = "client.authentication.k8s.io/v1beta1"
+    command         = "aws"
+    args            = ["eks", "get-token", "--cluster-name", "my-cluster"]
+    timeout_seconds = 30
+  }
+}
+```
+
+#### Azure AKS
+
+```hcl
+provider "terrahelm" {
+  kube_exec {
+    command = "az"
+    args = [
+      "account", "get-access-token",
+      "--resource", "6dae42f8-4368-4678-94ff-3960e28e3630",
+      "--output", "json",
+    ]
+  }
+}
+```
+
+#### Google GKE
+
+```hcl
+provider "terrahelm" {
+  kube_exec {
+    command = "gcloud"
+    args    = ["auth", "print-access-token"]
+  }
+}
+```
+
+#### Custom Command with Environment Variables
+
+```hcl
+provider "terrahelm" {
+  kube_exec {
+    command = "custom-auth-tool"
+    args    = ["--cluster", "my-cluster"]
+    env = {
+      "AWS_PROFILE" = "production"
+      "REGION"      = "us-west-2"
+    }
+    timeout_seconds = 60
+  }
+}
+```

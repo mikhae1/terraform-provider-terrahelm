@@ -47,7 +47,7 @@ build-release: clean build test
 	@mkdir -p $(RELEASE_DIR)
 	$(GOX_BIN) -osarch="$(RELEASE_PLATFORMS)" -output="$(RELEASE_DIR)/{{.OS}}-{{.Arch}}/$(PROVIDER)"
 
-release: build-release vet
+release: vet build-release
 	tfplugindocs
 	@echo "=> Creating release packages..."
 	@for platform in $(shell echo "$(RELEASE_PLATFORMS)" | tr ' ' '\n'); do \
